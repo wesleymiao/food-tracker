@@ -270,9 +270,20 @@ body {
 <!-- Page: 菜谱推荐 -->
 <div class="page" id="page-recipes">
   <div class="section" style="margin-top:16px">
-    <div class="section-title">🍳 根据现有食材推荐菜谱</div>
-    <div style="font-size:13px;color:var(--text-secondary);margin-bottom:16px">
-      优先使用即将过期的食材，减少浪费
+    <div class="section-title">🥘 选择要消耗的食材</div>
+    <div style="font-size:13px;color:var(--text-secondary);margin-bottom:10px">
+      勾选食材后，AI 帮你搜索最合适的菜谱
+    </div>
+    <div id="ingredientPicker" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px"></div>
+    <button onclick="searchRecipesAI()" id="aiRecipeBtn" style="width:100%;padding:12px;border:none;border-radius:10px;background:var(--info);color:white;font-size:14px;font-weight:600;cursor:pointer;display:none">
+      🔍 AI 搜索菜谱
+    </button>
+    <div id="aiRecipeResult" style="margin-top:12px"></div>
+  </div>
+  <div class="section">
+    <div class="section-title">🍳 本地推荐菜谱</div>
+    <div style="font-size:13px;color:var(--text-secondary);margin-bottom:12px">
+      根据现有食材自动匹配
     </div>
     <div id="recipeList"></div>
   </div>
@@ -944,6 +955,7 @@ function refresh() {
 
   // Recipes
   renderRecipes(active);
+  renderIngredientPicker(active);
 
   // Azure config
   const ac = getAzureConfig();
@@ -1473,6 +1485,149 @@ function cancelImport() {
   document.getElementById('importBanner')?.remove();
   window._pendingImport = null;
   history.replaceState(null, '', location.pathname);
+}
+
+// ===== Recipe Ingredient Picker + AI Search =====
+let selectedIngredients = new Set();
+
+function renderIngredientPicker(activeItems) {
+  const picker = document.getElementById('ingredientPicker');
+  if (!picker) return;
+
+  // Sort: expiring/expired first, then fresh
+  const sorted = [...activeItems].sort((a, b) => {
+    const sa = getStatus(a) === 'expired' ? 0 : getStatus(a) === 'expiring' ? 1 : 2;
+    const sb = getStatus(b) === 'expired' ? 0 : getStatus(b) === 'expiring' ? 1 : 2;
+    if (sa !== sb) return sa - sb;
+    return getDaysLeft(a) - getDaysLeft(b);
+  });
+
+  picker.innerHTML = sorted.map(item => {
+    const status = getStatus(item);
+    const daysLeft = getDaysLeft(item);
+    const sel = selectedIngredients.has(item.id);
+    const urgentStyle = status === 'expired' ? 'border-color:var(--danger);background:#FEE2E2' :
+                        status === 'expiring' ? 'border-color:var(--warning);background:#FEF3C7' : '';
+    const label = status === 'expired' ? '已过期' : status === 'expiring' ? `${daysLeft}天` : `${daysLeft}天`;
+    return `<div class="quick-food${sel ? ' selected' : ''}" style="${urgentStyle}" onclick="toggleIngredient(${item.id})">
+      ${CAT_ICONS[item.category] || '📦'} ${item.name}
+      <span style="font-size:10px;opacity:0.7">${label}</span>
+    </div>`;
+  }).join('');
+
+  if (sorted.length === 0) {
+    picker.innerHTML = '<div style="width:100%;text-align:center;padding:12px;color:var(--text-secondary);font-size:13px">冰箱里还没有食材</div>';
+  }
+
+  const btn = document.getElementById('aiRecipeBtn');
+  if (btn) btn.style.display = selectedIngredients.size > 0 ? 'block' : 'none';
+}
+
+function toggleIngredient(id) {
+  if (selectedIngredients.has(id)) selectedIngredients.delete(id);
+  else selectedIngredients.add(id);
+  const activeItems = getItems().filter(i => i.status === 'active');
+  renderIngredientPicker(activeItems);
+}
+
+async function searchRecipesAI() {
+  const ac = getAzureConfig();
+  if (!ac.endpoint || !ac.key) {
+    showToast('⚠️ 请先在设置页配置 Azure OpenAI');
+    return;
+  }
+
+  const items = getItems().filter(i => i.status === 'active');
+  const selected = items.filter(i => selectedIngredients.has(i.id));
+  if (selected.length === 0) { showToast('请先勾选食材'); return; }
+
+  const names = selected.map(i => {
+    const s = getStatus(i);
+    const d = getDaysLeft(i);
+    return `${i.name}（${s === 'expired' ? '已过期' : '还剩' + d + '天'}）`;
+  }).join('、');
+
+  const allNames = items.map(i => i.name).join('、');
+
+  const btn = document.getElementById('aiRecipeBtn');
+  const resultDiv = document.getElementById('aiRecipeResult');
+  btn.disabled = true;
+  btn.textContent = '🔍 正在搜索菜谱...';
+  resultDiv.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary)">⏳ AI 正在为你搜索菜谱...</div>';
+
+  const deployment = ac.deployment || 'gpt-4o';
+  const url = `${ac.endpoint}/openai/deployments/${deployment}/chat/completions?api-version=2024-12-01-preview`;
+
+  const prompt = `你是一个中餐菜谱推荐专家。用户选择了以下需要消耗的食材：${names}
+
+用户冰箱里所有食材：${allNames}
+
+请推荐 3-5 道适合的菜谱，优先消耗即将过期的食材。每道菜谱包含：
+1. 菜名
+2. 用到的已有食材（标注哪些是即将过期的）
+3. 需要额外购买的调料/配料
+4. 简要做法（3-5步）
+5. 烹饪时间
+6. 难度（简单/中等/较难）
+
+请按 JSON 格式返回：
+[{
+  "name": "菜名",
+  "used_ingredients": ["食材1（⚠️即将过期）", "食材2"],
+  "extra_needed": ["调料1"],
+  "steps": ["步骤1", "步骤2"],
+  "time": "15分钟",
+  "difficulty": "简单",
+  "tip": "一句话小贴士"
+}]
+
+只返回 JSON 数组。`;
+
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'api-key': ac.key },
+      body: JSON.stringify({
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 3000,
+        temperature: 0.7
+      })
+    });
+
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error.message);
+
+    const text = data.choices?.[0]?.message?.content || '';
+    const jsonMatch = text.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) throw new Error('未能解析菜谱');
+
+    const recipes = JSON.parse(jsonMatch[0]);
+    resultDiv.innerHTML = recipes.map(r => `
+      <div class="recipe-card">
+        <div class="recipe-title">${r.name}</div>
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+          <span style="font-size:11px;padding:2px 8px;border-radius:8px;background:#EFF6FF;color:#1D4ED8">⏱ ${r.time}</span>
+          <span style="font-size:11px;padding:2px 8px;border-radius:8px;background:#F0FDF4;color:#166534">${r.difficulty}</span>
+        </div>
+        <div class="recipe-tags">
+          ${r.used_ingredients.map(m => `<span class="recipe-tag">${m.includes('⚠') ? '' : '✅ '}${m}</span>`).join('')}
+          ${(r.extra_needed || []).map(m => `<span class="recipe-tag need">🛒 ${m}</span>`).join('')}
+        </div>
+        <div style="margin-top:8px">
+          ${r.steps.map((s, i) => `<div style="font-size:12px;color:var(--text-secondary);line-height:1.6;margin-bottom:2px"><span style="color:var(--primary);font-weight:600">${i + 1}.</span> ${s}</div>`).join('')}
+        </div>
+        ${r.tip ? `<div style="font-size:12px;color:var(--info);margin-top:6px">💡 ${r.tip}</div>` : ''}
+      </div>
+    `).join('');
+
+    showToast(`✅ 找到 ${recipes.length} 道菜谱`);
+  } catch (err) {
+    console.error('Recipe search error:', err);
+    resultDiv.innerHTML = `<div style="text-align:center;padding:20px;color:var(--danger)">❌ 搜索失败：${err.message || '请检查网络和 Azure 配置'}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🔍 AI 搜索菜谱';
+  }
 }
 
 // ===== Cloud Sync =====
