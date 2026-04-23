@@ -1052,53 +1052,37 @@ async function runOCR(imgSrc) {
 function extractFoodItems(text) {
   const lines = text.split(/[\n\r]+/).map(l => l.trim()).filter(Boolean);
   const found = [];
-  const usedKw = new Set();
+  const usedCanonical = new Set();
 
-  // Show OCR raw text for debugging
+  // Show OCR raw text
   document.getElementById('ocrRawText').style.display = 'block';
   document.getElementById('ocrText').textContent = text;
 
-  // Normalize: remove spaces, convert to lowercase for matching
-  const normalized = text.replace(/\s+/g, '').toLowerCase();
-  // Also try matching each line separately (for better accuracy)
-  const normalizedLines = lines.map(l => l.replace(/\s+/g, '').toLowerCase());
-
-  for (const food of FOOD_DB) {
-    for (const kw of food.kw) {
-      if (usedKw.has(food.kw[0])) break;
-      // Fuzzy: try exact, then allow 1 char difference for OCR errors
-      let matched = normalized.includes(kw);
-      if (!matched && kw.length >= 2) {
-        // Try matching with any single char substitution (OCR tolerance)
-        for (let i = 0; i < kw.length && !matched; i++) {
-          const partial = kw.substring(0, i) + '.' + kw.substring(i + 1);
-          try { matched = new RegExp(partial).test(normalized); } catch(e) {}
+  // Only do EXACT keyword matching, line by line
+  // This avoids false positives from addresses, store names, etc.
+  for (const line of lines) {
+    const nl = line.replace(/\s+/g, '');
+    for (const food of FOOD_DB) {
+      if (usedCanonical.has(food.kw[0])) continue;
+      for (const kw of food.kw) {
+        if (kw.length < 2) continue; // skip single-char keywords
+        if (nl.includes(kw)) {
+          let qty = '适量';
+          const qMatch = line.match(/(\d+[\.\d]*)\s*(g|kg|斤|两|个|盒|袋|瓶|包|份|根|条|颗|块|片|ml|mL|L|升|毫升|克|千克)/i);
+          if (qMatch) qty = qMatch[1] + qMatch[2];
+          const countMatch = line.match(/[x×]\s*(\d+)/i);
+          if (qty === '适量' && countMatch) qty = countMatch[1] + '份';
+          found.push({
+            name: food.kw[0],
+            category: food.cat,
+            nutrition: food.nut,
+            quantity: qty,
+            shelf_life_days: food.shelf,
+            storage: food.storage
+          });
+          usedCanonical.add(food.kw[0]);
+          break;
         }
-      }
-      if (matched) {
-        let qty = '适量';
-        for (const line of lines) {
-          const nl = line.replace(/\s+/g, '').toLowerCase();
-          if (nl.includes(kw) || (kw.length >= 2 && (() => { try { return new RegExp(kw.substring(0,1) + '.' + kw.substring(2)).test(nl); } catch(e) { return false; } })())) {
-            const qMatch = line.match(/(\d+[\.\d]*)\s*(g|kg|斤|两|个|盒|袋|瓶|包|份|根|条|颗|块|片|ml|mL|L|升|毫升|克|千克)/i);
-            if (qMatch) qty = qMatch[1] + qMatch[2];
-            // Also try price-adjacent quantity like "x2" or "×2"
-            const countMatch = line.match(/[x×]\s*(\d+)/i);
-            if (qty === '适量' && countMatch) qty = countMatch[1] + '份';
-            break;
-          }
-        }
-        found.push({
-          name: food.kw[0],
-          category: food.cat,
-          nutrition: food.nut,
-          quantity: qty,
-          shelf_life_days: food.shelf,
-          storage: food.storage
-        });
-        food.kw.forEach(k => usedKw.add(k));
-        usedKw.add(food.kw[0]);
-        break;
       }
     }
   }
