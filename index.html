@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>食材管家</title>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 :root {
@@ -90,6 +91,14 @@ body {
 }
 .btn-consume { background: #DBEAFE; color: #2563EB; }
 .btn-delete { background: #FEE2E2; color: #DC2626; }
+.fab-scan { box-shadow: 0 2px 12px rgba(59,130,246,0.3); }
+.scan-item {
+  background: #F9FAFB; border-radius: 10px; padding: 10px 12px; margin-bottom: 8px;
+  display: flex; align-items: center; gap: 8px;
+}
+.scan-item input { flex: 1; border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font-size: 13px; }
+.scan-item select { border: 1px solid var(--border); border-radius: 6px; padding: 6px; font-size: 12px; }
+.scan-item .scan-remove { width: 28px; height: 28px; border: none; background: #FEE2E2; color: #DC2626; border-radius: 6px; cursor: pointer; font-size: 14px; }
 
 /* Nutrition pill */
 .nut-pill {
@@ -305,8 +314,37 @@ body {
   </div>
 </div>
 
-<!-- FAB -->
+<!-- FAB group -->
+<button class="fab fab-scan" onclick="openScanModal()" style="bottom:150px;background:var(--info);width:48px;height:48px;font-size:20px">📷</button>
 <button class="fab" onclick="openAddModal()">+</button>
+
+<!-- Scan Modal -->
+<div class="modal-overlay" id="scanModal">
+  <div class="modal">
+    <h2>📷 拍照识别食材</h2>
+    <div style="font-size:13px;color:var(--text-secondary);margin-bottom:16px">拍照或上传订单截图，自动识别食材</div>
+    <div id="scanUploadArea" style="border:2px dashed var(--border);border-radius:12px;padding:30px;text-align:center;cursor:pointer;margin-bottom:16px" onclick="document.getElementById('scanFile').click()">
+      <div style="font-size:36px;margin-bottom:8px">📸</div>
+      <div style="font-size:14px;color:var(--text-secondary)">点击拍照或选择图片</div>
+      <input type="file" id="scanFile" accept="image/*" capture="environment" style="display:none" onchange="handleScanFile(event)">
+    </div>
+    <div id="scanPreview" style="display:none;margin-bottom:16px">
+      <img id="scanImg" style="width:100%;border-radius:10px;margin-bottom:8px">
+      <div id="scanProgress" style="display:none">
+        <div style="font-size:13px;color:var(--text-secondary);margin-bottom:6px" id="scanStatus">正在识别中...</div>
+        <div class="progress-bar" style="height:6px"><div class="progress-fill" id="scanProgressBar" style="width:0%;background:var(--primary)"></div></div>
+      </div>
+    </div>
+    <div id="scanResults" style="display:none">
+      <div style="font-size:14px;font-weight:600;margin-bottom:10px">识别结果（可编辑）</div>
+      <div id="scanItemsList"></div>
+      <button onclick="addAllScanned()" class="btn-submit" style="width:100%;margin-top:12px">全部添加到冰箱</button>
+    </div>
+    <div class="form-actions">
+      <button class="btn-cancel" onclick="closeScanModal()">关闭</button>
+    </div>
+  </div>
+</div>
 
 <!-- Add Modal -->
 <div class="modal-overlay" id="addModal">
@@ -849,6 +887,7 @@ function switchPage(page, el) {
   document.getElementById('page-' + page).classList.add('active');
   el.classList.add('active');
   document.querySelector('.fab').style.display = page === 'fridge' ? 'flex' : 'none';
+  document.querySelector('.fab-scan').style.display = page === 'fridge' ? 'flex' : 'none';
   if (page === 'recipes') refresh();
 }
 
@@ -881,6 +920,203 @@ function clearAll() {
   if (!confirm('确定清除所有数据？不可撤销！')) return;
   localStorage.removeItem(STORE_KEY);
   refresh();
+}
+
+// ===== Scan / OCR =====
+const FOOD_DB = [
+  {kw:['鸡胸肉','鸡胸'],cat:'肉类',nut:'蛋白质',shelf:5,storage:'冷藏'},
+  {kw:['鸡翅','鸡中翅','翅中','翅根'],cat:'肉类',nut:'蛋白质',shelf:3,storage:'冷藏'},
+  {kw:['鸡腿','琵琶腿'],cat:'肉类',nut:'蛋白质',shelf:3,storage:'冷藏'},
+  {kw:['鸡肉','鸡'],cat:'肉类',nut:'蛋白质',shelf:3,storage:'冷藏'},
+  {kw:['猪肉','五花肉','猪排','排骨','里脊','肉末','肉馅','前腿肉','后腿肉','梅花肉'],cat:'肉类',nut:'蛋白质',shelf:3,storage:'冷藏'},
+  {kw:['牛肉','牛腩','牛排','肥牛','牛腱'],cat:'肉类',nut:'蛋白质',shelf:3,storage:'冷藏'},
+  {kw:['羊肉','羊腿','羊排'],cat:'肉类',nut:'蛋白质',shelf:3,storage:'冷藏'},
+  {kw:['三文鱼','salmon'],cat:'海鲜',nut:'蛋白质',shelf:2,storage:'冷藏'},
+  {kw:['虾','基围虾','大虾','虾仁','明虾'],cat:'海鲜',nut:'蛋白质',shelf:2,storage:'冷藏'},
+  {kw:['鱼','鲈鱼','鲫鱼','带鱼','鳕鱼','黄鱼','龙利鱼','巴沙鱼'],cat:'海鲜',nut:'蛋白质',shelf:2,storage:'冷藏'},
+  {kw:['螃蟹','蟹','大闸蟹'],cat:'海鲜',nut:'蛋白质',shelf:1,storage:'冷藏'},
+  {kw:['蛤蜊','花蛤','蛏子','贝','扇贝'],cat:'海鲜',nut:'蛋白质',shelf:1,storage:'冷藏'},
+  {kw:['鸡蛋','鸡蛋','土鸡蛋','草鸡蛋','蛋'],cat:'蛋类',nut:'蛋白质',shelf:21,storage:'冷藏'},
+  {kw:['鸭蛋'],cat:'蛋类',nut:'蛋白质',shelf:21,storage:'冷藏'},
+  {kw:['豆腐','嫩豆腐','老豆腐','内酯豆腐'],cat:'豆制品',nut:'蛋白质',shelf:3,storage:'冷藏'},
+  {kw:['豆浆','豆奶'],cat:'豆制品',nut:'蛋白质',shelf:3,storage:'冷藏'},
+  {kw:['牛奶','鲜奶','纯牛奶','全脂奶','脱脂奶','低脂奶'],cat:'乳制品',nut:'奶制品',shelf:7,storage:'冷藏'},
+  {kw:['酸奶','yogurt'],cat:'乳制品',nut:'奶制品',shelf:14,storage:'冷藏'},
+  {kw:['奶酪','芝士','cheese'],cat:'乳制品',nut:'奶制品',shelf:30,storage:'冷藏'},
+  {kw:['黄油','奶油','butter'],cat:'乳制品',nut:'奶制品',shelf:30,storage:'冷藏'},
+  {kw:['西兰花','花椰菜','花菜','菜花'],cat:'蔬菜',nut:'蔬菜水果',shelf:5,storage:'冷藏'},
+  {kw:['番茄','西红柿'],cat:'蔬菜',nut:'蔬菜水果',shelf:7,storage:'冷藏'},
+  {kw:['黄瓜'],cat:'蔬菜',nut:'蔬菜水果',shelf:5,storage:'冷藏'},
+  {kw:['土豆','马铃薯'],cat:'蔬菜',nut:'蔬菜水果',shelf:14,storage:'常温'},
+  {kw:['胡萝卜','红萝卜'],cat:'蔬菜',nut:'蔬菜水果',shelf:14,storage:'冷藏'},
+  {kw:['洋葱'],cat:'蔬菜',nut:'蔬菜水果',shelf:14,storage:'常温'},
+  {kw:['青椒','辣椒','彩椒','甜椒'],cat:'蔬菜',nut:'蔬菜水果',shelf:7,storage:'冷藏'},
+  {kw:['菠菜'],cat:'蔬菜',nut:'蔬菜水果',shelf:3,storage:'冷藏'},
+  {kw:['生菜'],cat:'蔬菜',nut:'蔬菜水果',shelf:3,storage:'冷藏'},
+  {kw:['白菜','大白菜','小白菜','娃娃菜'],cat:'蔬菜',nut:'蔬菜水果',shelf:7,storage:'冷藏'},
+  {kw:['青菜','油菜','油麦菜','空心菜'],cat:'蔬菜',nut:'蔬菜水果',shelf:3,storage:'冷藏'},
+  {kw:['芹菜'],cat:'蔬菜',nut:'蔬菜水果',shelf:5,storage:'冷藏'},
+  {kw:['蘑菇','香菇','金针菇','杏鲍菇','平菇','木耳'],cat:'蔬菜',nut:'蔬菜水果',shelf:5,storage:'冷藏'},
+  {kw:['南瓜'],cat:'蔬菜',nut:'蔬菜水果',shelf:14,storage:'常温'},
+  {kw:['玉米'],cat:'蔬菜',nut:'碳水主食',shelf:5,storage:'冷藏'},
+  {kw:['豆角','四季豆','毛豆','豌豆'],cat:'蔬菜',nut:'蔬菜水果',shelf:5,storage:'冷藏'},
+  {kw:['苹果'],cat:'水果',nut:'蔬菜水果',shelf:14,storage:'冷藏'},
+  {kw:['香蕉'],cat:'水果',nut:'蔬菜水果',shelf:5,storage:'常温'},
+  {kw:['橙子','橙','脐橙'],cat:'水果',nut:'蔬菜水果',shelf:14,storage:'冷藏'},
+  {kw:['草莓'],cat:'水果',nut:'蔬菜水果',shelf:3,storage:'冷藏'},
+  {kw:['葡萄','提子'],cat:'水果',nut:'蔬菜水果',shelf:5,storage:'冷藏'},
+  {kw:['蓝莓'],cat:'水果',nut:'蔬菜水果',shelf:7,storage:'冷藏'},
+  {kw:['猕猴桃','奇异果'],cat:'水果',nut:'蔬菜水果',shelf:7,storage:'冷藏'},
+  {kw:['西瓜'],cat:'水果',nut:'蔬菜水果',shelf:3,storage:'冷藏'},
+  {kw:['芒果'],cat:'水果',nut:'蔬菜水果',shelf:5,storage:'冷藏'},
+  {kw:['桃','水蜜桃','桃子'],cat:'水果',nut:'蔬菜水果',shelf:5,storage:'冷藏'},
+  {kw:['梨','鸭梨','雪梨'],cat:'水果',nut:'蔬菜水果',shelf:10,storage:'冷藏'},
+  {kw:['柠檬'],cat:'水果',nut:'蔬菜水果',shelf:14,storage:'冷藏'},
+  {kw:['樱桃','车厘子'],cat:'水果',nut:'蔬菜水果',shelf:5,storage:'冷藏'},
+  {kw:['米','大米','米饭'],cat:'主食',nut:'碳水主食',shelf:90,storage:'常温'},
+  {kw:['面条','挂面','面','意面','意大利面'],cat:'主食',nut:'碳水主食',shelf:90,storage:'常温'},
+  {kw:['面包','吐司','toast'],cat:'主食',nut:'碳水主食',shelf:5,storage:'常温'},
+  {kw:['馒头','包子','饺子','馄饨'],cat:'主食',nut:'碳水主食',shelf:3,storage:'冷冻'},
+  {kw:['酱油','生抽','老抽'],cat:'调味料',nut:'调味料',shelf:365,storage:'常温'},
+  {kw:['醋','陈醋','米醋','香醋'],cat:'调味料',nut:'调味料',shelf:365,storage:'常温'},
+  {kw:['盐','食盐'],cat:'调味料',nut:'调味料',shelf:999,storage:'常温'},
+  {kw:['糖','白糖','冰糖','红糖'],cat:'调味料',nut:'调味料',shelf:365,storage:'常温'},
+  {kw:['姜','生姜'],cat:'调味料',nut:'调味料',shelf:14,storage:'常温'},
+  {kw:['蒜','大蒜','蒜头'],cat:'调味料',nut:'调味料',shelf:14,storage:'常温'},
+  {kw:['葱','小葱','大葱'],cat:'蔬菜',nut:'蔬菜水果',shelf:5,storage:'冷藏'},
+];
+
+let scannedItems = [];
+
+function openScanModal() {
+  document.getElementById('scanModal').classList.add('show');
+  document.getElementById('scanPreview').style.display = 'none';
+  document.getElementById('scanResults').style.display = 'none';
+  document.getElementById('scanUploadArea').style.display = 'block';
+  document.getElementById('scanFile').value = '';
+  scannedItems = [];
+}
+function closeScanModal() { document.getElementById('scanModal').classList.remove('show'); }
+
+function handleScanFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    document.getElementById('scanImg').src = ev.target.result;
+    document.getElementById('scanPreview').style.display = 'block';
+    document.getElementById('scanUploadArea').style.display = 'none';
+    document.getElementById('scanProgress').style.display = 'block';
+    document.getElementById('scanStatus').textContent = '正在加载 OCR 引擎...';
+    document.getElementById('scanProgressBar').style.width = '10%';
+    runOCR(ev.target.result);
+  };
+  reader.readAsDataURL(file);
+}
+
+async function runOCR(imgSrc) {
+  try {
+    const result = await Tesseract.recognize(imgSrc, 'chi_sim+eng', {
+      logger: m => {
+        if (m.status === 'recognizing text') {
+          const pct = Math.round(m.progress * 100);
+          document.getElementById('scanProgressBar').style.width = pct + '%';
+          document.getElementById('scanStatus').textContent = `识别中... ${pct}%`;
+        }
+      }
+    });
+
+    document.getElementById('scanProgress').style.display = 'none';
+    const text = result.data.text;
+    console.log('OCR text:', text);
+    extractFoodItems(text);
+  } catch (err) {
+    console.error('OCR error:', err);
+    document.getElementById('scanStatus').textContent = '识别失败，请重试';
+  }
+}
+
+function extractFoodItems(text) {
+  const lines = text.split(/[\n\r]+/).map(l => l.trim()).filter(Boolean);
+  const found = [];
+  const usedKw = new Set();
+
+  // Try to match each food in DB against the OCR text
+  const fullText = text.toLowerCase();
+  for (const food of FOOD_DB) {
+    for (const kw of food.kw) {
+      if (usedKw.has(kw)) continue;
+      if (fullText.includes(kw)) {
+        // Try to find quantity nearby
+        let qty = '适量';
+        for (const line of lines) {
+          if (line.includes(kw)) {
+            const qMatch = line.match(/(\d+[\.\d]*)\s*(g|kg|斤|两|个|盒|袋|瓶|包|份|根|条|颗|块|片|ml|L|升)/i);
+            if (qMatch) qty = qMatch[1] + qMatch[2];
+            break;
+          }
+        }
+        found.push({
+          name: food.kw[0], // use canonical name
+          category: food.cat,
+          nutrition: food.nut,
+          quantity: qty,
+          shelf_life_days: food.shelf,
+          storage: food.storage
+        });
+        // Mark all synonyms as used
+        food.kw.forEach(k => usedKw.add(k));
+        break;
+      }
+    }
+  }
+
+  scannedItems = found;
+  renderScanResults();
+}
+
+function renderScanResults() {
+  const container = document.getElementById('scanResults');
+  const list = document.getElementById('scanItemsList');
+  if (scannedItems.length === 0) {
+    list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary)">未识别到食材，试试手动添加 👆</div>';
+    container.style.display = 'block';
+    return;
+  }
+  container.style.display = 'block';
+  list.innerHTML = scannedItems.map((item, i) => `
+    <div class="scan-item" id="scanItem${i}">
+      <span>${CAT_ICONS[item.category]||'📦'}</span>
+      <input type="text" value="${item.name}" onchange="scannedItems[${i}].name=this.value" style="flex:1">
+      <input type="text" value="${item.quantity}" onchange="scannedItems[${i}].quantity=this.value" style="width:60px">
+      <button class="scan-remove" onclick="scannedItems.splice(${i},1);renderScanResults()">×</button>
+    </div>
+  `).join('') + `<div style="text-align:center;margin-top:8px">
+    <span style="font-size:12px;color:var(--text-secondary)">共识别 ${scannedItems.length} 个食材，可编辑名称和数量</span>
+  </div>`;
+}
+
+function addAllScanned() {
+  if (scannedItems.length === 0) return;
+  const items = getItems();
+  const now = today();
+  scannedItems.forEach((si, i) => {
+    const expDate = new Date(now);
+    expDate.setDate(expDate.getDate() + si.shelf_life_days);
+    const expiry = `${expDate.getFullYear()}-${String(expDate.getMonth()+1).padStart(2,'0')}-${String(expDate.getDate()).padStart(2,'0')}`;
+    items.unshift({
+      id: Date.now() + i,
+      name: si.name, category: si.category, nutrition: si.nutrition,
+      quantity: si.quantity, purchase_date: now, expiry_date: expiry,
+      shelf_life_days: si.shelf_life_days, storage: si.storage,
+      custom_remind_day: null, status: 'active', note: '截图导入'
+    });
+  });
+  saveItems(items);
+  closeScanModal();
+  refresh();
+  showToast(`✅ 已导入 ${scannedItems.length} 个食材`);
+  scannedItems = [];
 }
 
 // URL import: ?import=base64encodedJSON
