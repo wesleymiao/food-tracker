@@ -883,7 +883,61 @@ function clearAll() {
   refresh();
 }
 
+// URL import: ?import=base64encodedJSON
+function checkUrlImport() {
+  const params = new URLSearchParams(location.search);
+  const data = params.get('import');
+  if (!data) return;
+  try {
+    const decoded = JSON.parse(decodeURIComponent(atob(data)));
+    const newItems = Array.isArray(decoded) ? decoded : decoded.items || [];
+    if (newItems.length === 0) return;
+
+    // Show confirmation
+    const names = newItems.map(i => i.name).join('、');
+    const container = document.createElement('div');
+    container.id = 'importBanner';
+    container.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:999;display:flex;align-items:center;justify-content:center;padding:20px';
+    container.innerHTML = `
+      <div style="background:white;border-radius:16px;padding:24px;max-width:340px;width:100%;max-height:80vh;overflow-y:auto">
+        <h3 style="font-size:18px;margin-bottom:12px">📦 导入 ${newItems.length} 个食材</h3>
+        <div style="font-size:13px;color:#6B7280;margin-bottom:16px;line-height:1.6">
+          ${newItems.map(i => `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #F3F4F6">
+            <span>${CAT_ICONS[i.category]||'📦'} ${i.name}</span>
+            <span style="color:#9CA3AF">${i.quantity||''} · ${i.nutrition ? (NUTRITION_ICONS[i.nutrition]||'') + i.nutrition : ''}</span>
+          </div>`).join('')}
+        </div>
+        <div style="display:flex;gap:10px">
+          <button onclick="cancelImport()" style="flex:1;padding:12px;border-radius:10px;border:1.5px solid #E5E7EB;background:white;font-size:14px;cursor:pointer">取消</button>
+          <button onclick="confirmImport()" style="flex:1;padding:12px;border-radius:10px;border:none;background:#22C55E;color:white;font-size:14px;font-weight:600;cursor:pointer">确认导入</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(container);
+    window._pendingImport = newItems;
+  } catch(e) { console.error('Import parse error:', e); }
+}
+function confirmImport() {
+  const newItems = window._pendingImport || [];
+  const items = getItems();
+  const ids = new Set(items.map(i => i.id));
+  const toAdd = newItems.filter(i => !ids.has(i.id));
+  saveItems([...toAdd, ...items]);
+  document.getElementById('importBanner')?.remove();
+  window._pendingImport = null;
+  // Clean URL
+  history.replaceState(null, '', location.pathname);
+  refresh();
+  showToast(`✅ 已导入 ${toAdd.length} 个食材`);
+}
+function cancelImport() {
+  document.getElementById('importBanner')?.remove();
+  window._pendingImport = null;
+  history.replaceState(null, '', location.pathname);
+}
+
 // Init
+checkUrlImport();
 refresh();
 </script>
 </body>
