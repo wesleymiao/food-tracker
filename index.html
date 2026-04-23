@@ -1658,6 +1658,7 @@ function pickRecipeCat(el, cat) {
   el.classList.add('selected');
   selectedRecipeIngredient = cat;
   document.getElementById('recipeIngredientInput').value = cat;
+  searchByIngredient();
 }
 
 function pickFridgeIngredient(name, el) {
@@ -1665,6 +1666,7 @@ function pickFridgeIngredient(name, el) {
   el.classList.add('selected');
   selectedRecipeIngredient = name;
   document.getElementById('recipeIngredientInput').value = name;
+  searchByIngredient();
 }
 
 async function searchByIngredient() {
@@ -1966,4 +1968,3 @@ if (syncFromUrl) {
 </script>
 </body>
 </html>
-<!-- deployed 20260423143447 -->
