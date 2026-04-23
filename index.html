@@ -315,14 +315,13 @@ body {
   <div class="section">
     <div class="section-title">🤖 AI 识别设置</div>
     <div class="settings-item" style="flex-direction:column;align-items:stretch;gap:8px">
-      <div class="settings-label">Gemini API Key（用于拍照识别食材）</div>
-      <div style="display:flex;gap:6px">
-        <input type="password" id="geminiKey" placeholder="粘贴 API Key" style="flex:1;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px">
-        <button onclick="saveGeminiKey()" style="padding:8px 14px;border:none;border-radius:8px;background:var(--primary);color:white;font-size:13px;cursor:pointer">保存</button>
-      </div>
+      <div class="settings-label">Azure OpenAI（用于拍照识别食材）</div>
+      <input type="text" id="azureEndpoint" placeholder="Endpoint（如 https://xxx.openai.azure.com）" style="border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px">
+      <input type="password" id="azureKey" placeholder="API Key" style="border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px">
+      <input type="text" id="azureDeployment" placeholder="部署名称（如 gpt-4o）" style="border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px">
+      <button onclick="saveAzureConfig()" style="padding:10px;border:none;border-radius:8px;background:var(--primary);color:white;font-size:13px;font-weight:600;cursor:pointer">保存</button>
       <div style="font-size:11px;color:var(--text-secondary);line-height:1.5">
-        免费获取：访问 <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--info)">aistudio.google.com/apikey</a> 创建密钥<br>
-        Gemini 2.0 Flash 免费额度充足，足够日常使用
+        使用 Azure OpenAI GPT-4o 进行图片识别
       </div>
     </div>
   </div>
@@ -365,8 +364,7 @@ body {
         </div>
       </div>
       <div id="noKeyWarning" style="display:none;background:#FEF3C7;border-radius:10px;padding:12px;margin-bottom:12px;font-size:12px;color:#92400E;line-height:1.5">
-        ⚠️ 需要先在「设置」页配置 Gemini API Key 才能使用拍照识别。<br>
-        <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--info)">点此免费获取 →</a>
+        ⚠️ 需要先在「设置」页配置 Azure OpenAI 才能使用拍照识别。
       </div>
     </div>
 
@@ -858,9 +856,13 @@ function refresh() {
   // Recipes
   renderRecipes(active);
 
-  // Gemini key
-  const gk = document.getElementById('geminiKey');
-  if (gk) gk.value = getGeminiKey();
+  // Azure config
+  const ac = getAzureConfig();
+  if (document.getElementById('azureEndpoint')) {
+    document.getElementById('azureEndpoint').value = ac.endpoint || '';
+    document.getElementById('azureKey').value = ac.key || '';
+    document.getElementById('azureDeployment').value = ac.deployment || '';
+  }
 }
 
 function renderRecipes(activeItems) {
@@ -990,11 +992,15 @@ let scannedItems = [];
 let quickCatFilter = '全部';
 let currentScanTab = 'photo';
 
-function getGeminiKey() { return localStorage.getItem('gemini_api_key') || ''; }
-function saveGeminiKey() {
-  const key = document.getElementById('geminiKey').value.trim();
-  localStorage.setItem('gemini_api_key', key);
-  showToast(key ? '✅ API Key 已保存' : '已清除 API Key');
+function getAzureConfig() { return JSON.parse(localStorage.getItem('azure_openai_config') || '{}'); }
+function saveAzureConfig() {
+  const cfg = {
+    endpoint: document.getElementById('azureEndpoint').value.trim().replace(/\/+$/, ''),
+    key: document.getElementById('azureKey').value.trim(),
+    deployment: document.getElementById('azureDeployment').value.trim() || 'gpt-4o'
+  };
+  localStorage.setItem('azure_openai_config', JSON.stringify(cfg));
+  showToast(cfg.key ? '✅ Azure 配置已保存' : '已清除配置');
 }
 
 function openScanModal() {
@@ -1007,9 +1013,8 @@ function openScanModal() {
   document.getElementById('scanFile').value = '';
   document.getElementById('manualFoodName').value = '';
   renderSelected();
-  // Check API key
-  const hasKey = !!getGeminiKey();
-  document.getElementById('noKeyWarning').style.display = hasKey ? 'none' : 'block';
+  const ac = getAzureConfig();
+  document.getElementById('noKeyWarning').style.display = (ac.endpoint && ac.key) ? 'none' : 'block';
 }
 function closeScanModal() { document.getElementById('scanModal').classList.remove('show'); }
 
@@ -1029,14 +1034,14 @@ function switchScanTab(tab) {
   }
 }
 
-// --- Photo / Gemini AI ---
+// --- Photo / Azure OpenAI ---
 function handleScanFile(e) {
   const file = e.target.files[0];
   if (!file) return;
-  const key = getGeminiKey();
-  if (!key) {
+  const ac = getAzureConfig();
+  if (!ac.endpoint || !ac.key) {
     document.getElementById('noKeyWarning').style.display = 'block';
-    showToast('⚠️ 请先在设置页配置 Gemini API Key');
+    showToast('⚠️ 请先在设置页配置 Azure OpenAI');
     return;
   }
   const reader = new FileReader();
@@ -1047,16 +1052,18 @@ function handleScanFile(e) {
     document.getElementById('scanProgress').style.display = 'block';
     document.getElementById('scanStatus').textContent = '正在 AI 识别中...';
     document.getElementById('scanProgressBar').style.width = '30%';
-    // Extract base64 data
-    const base64 = ev.target.result.split(',')[1];
-    const mimeType = file.type || 'image/jpeg';
-    callGemini(base64, mimeType);
+    const dataUrl = ev.target.result;
+    callAzureOpenAI(dataUrl);
   };
   reader.readAsDataURL(file);
 }
 
-async function callGemini(base64, mimeType) {
-  const key = getGeminiKey();
+async function callAzureOpenAI(dataUrl) {
+  const ac = getAzureConfig();
+  const deployment = ac.deployment || 'gpt-4o';
+  const apiVersion = '2024-12-01-preview';
+  const url = `${ac.endpoint}/openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`;
+
   const prompt = `你是一个食材识别助手。请仔细分析这张图片（可能是外卖订单、超市购物小票、冰箱照片或食材照片），识别出所有食材/食品。
 
 对每个识别到的食材，返回一个JSON数组，每个元素包含：
@@ -1071,17 +1078,22 @@ async function callGemini(base64, mimeType) {
 
   try {
     document.getElementById('scanProgressBar').style.width = '60%';
-    const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`, {
+    const resp = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'api-key': ac.key
+      },
       body: JSON.stringify({
-        contents: [{
-          parts: [
-            { text: prompt },
-            { inline_data: { mime_type: mimeType, data: base64 } }
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            { type: 'image_url', image_url: { url: dataUrl } }
           ]
         }],
-        generationConfig: { temperature: 0.1 }
+        max_tokens: 2000,
+        temperature: 0.1
       })
     });
 
@@ -1089,13 +1101,12 @@ async function callGemini(base64, mimeType) {
     const data = await resp.json();
 
     if (data.error) {
-      throw new Error(data.error.message || 'API 错误');
+      throw new Error(data.error.message || JSON.stringify(data.error));
     }
 
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    console.log('Gemini response:', text);
+    const text = data.choices?.[0]?.message?.content || '';
+    console.log('Azure response:', text);
 
-    // Extract JSON from response
     const jsonMatch = text.match(/\[[\s\S]*\]/);
     if (jsonMatch) {
       const items = JSON.parse(jsonMatch[0]);
@@ -1117,10 +1128,9 @@ async function callGemini(base64, mimeType) {
       showToast('未识别到食材，可手动添加');
     }
   } catch (err) {
-    console.error('Gemini error:', err);
+    console.error('Azure OpenAI error:', err);
     document.getElementById('scanProgress').style.display = 'none';
-    document.getElementById('scanStatus').textContent = '';
-    showToast('❌ 识别失败：' + (err.message || '请检查 API Key'));
+    showToast('❌ 识别失败：' + (err.message || '请检查 Azure 配置'));
   }
 }
 
