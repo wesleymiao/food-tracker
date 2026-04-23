@@ -1599,10 +1599,11 @@ saveItems = function(items) {
 function checkUrlSync() {
   const params = new URLSearchParams(location.search);
   const syncKey = params.get('sync');
-  if (!syncKey) return;
+  if (!syncKey) return false;
   localStorage.setItem(SYNC_KEY_STORE, syncKey);
   history.replaceState(null, '', location.pathname);
   showToast('✅ 同步密钥已配置');
+  return true;
 }
 
 // Edit food
@@ -1662,10 +1663,15 @@ function saveEdit() {
 
 // Init
 checkUrlSetup();
-checkUrlSync();
+const syncFromUrl = checkUrlSync();
 checkUrlImport();
 refresh();
-initSync();
+if (syncFromUrl) {
+  // If sync key just set from URL, sync immediately
+  setTimeout(syncNow, 500);
+} else {
+  initSync();
+}
 </script>
 </body>
 </html>
