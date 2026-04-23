@@ -248,8 +248,20 @@ body {
   </div>
   <!-- Nutrition Balance -->
   <div class="section" style="margin-top:12px;margin-bottom:0">
-    <div class="section-title" style="font-size:14px;margin-bottom:8px">🥗 营养均衡</div>
+    <div class="section-title" style="font-size:14px;margin-bottom:8px">
+      🥗 营养均衡
+      <span style="font-size:12px;color:var(--text-secondary);font-weight:400;cursor:pointer" onclick="toggleNutritionPanel()">详情 ▾</span>
+    </div>
     <div id="nutritionBars" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+    <div id="nutritionPanel" style="display:none;margin-top:10px;background:var(--card);border-radius:12px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.06)">
+      <div style="display:flex;gap:6px;margin-bottom:12px;overflow-x:auto">
+        <div class="filter-tab active" onclick="setNutPeriod(7,this)">近7天</div>
+        <div class="filter-tab" onclick="setNutPeriod(14,this)">近14天</div>
+        <div class="filter-tab" onclick="setNutPeriod(30,this)">近30天</div>
+      </div>
+      <div id="nutritionAnalysis"></div>
+      <div id="nutritionAdvice" style="margin-top:10px"></div>
+    </div>
   </div>
   <div class="filter-tabs" id="filterTabs">
     <div class="filter-tab active" onclick="setFilter('all',this)">全部</div>
@@ -1497,6 +1509,107 @@ function cancelImport() {
   document.getElementById('importBanner')?.remove();
   window._pendingImport = null;
   history.replaceState(null, '', location.pathname);
+}
+
+// ===== Nutrition Analysis =====
+let nutPeriodDays = 7;
+let nutPanelOpen = false;
+
+function toggleNutritionPanel() {
+  nutPanelOpen = !nutPanelOpen;
+  document.getElementById('nutritionPanel').style.display = nutPanelOpen ? 'block' : 'none';
+  if (nutPanelOpen) renderNutritionAnalysis();
+}
+
+function setNutPeriod(days, el) {
+  nutPeriodDays = days;
+  el.parentElement.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  renderNutritionAnalysis();
+}
+
+function renderNutritionAnalysis() {
+  const items = getItems();
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - nutPeriodDays);
+  const cutoffStr = `${cutoff.getFullYear()}-${String(cutoff.getMonth()+1).padStart(2,'0')}-${String(cutoff.getDate()).padStart(2,'0')}`;
+
+  // Count items purchased/consumed in the period
+  const periodItems = items.filter(i => {
+    const d = i.consumed_date || i.purchase_date;
+    return d >= cutoffStr;
+  });
+
+  // Count by nutrition type
+  const counts = {};
+  const idealRatio = {
+    '蛋白质': { ratio: 0.25, label: '蛋白质（肉蛋豆坚果）', tip: '建议多摄入鸡胸肉、鱼虾、鸡蛋、豆腐等优质蛋白' },
+    '蔬菜水果': { ratio: 0.35, label: '蔬菜水果', tip: '建议每天至少摄入300-500g蔬菜和200-350g水果' },
+    '奶制品': { ratio: 0.10, label: '奶制品', tip: '建议每天一杯牛奶或酸奶，补充钙质' },
+    '碳水主食': { ratio: 0.20, label: '碳水主食', tip: '适量摄入全谷物，减少精制碳水' },
+    '坚果': { ratio: 0.05, label: '坚果', tip: '每天一小把坚果（约25g），补充健康脂肪' },
+    '其他': { ratio: 0.05, label: '其他', tip: '' }
+  };
+
+  // Merge 坚果 into its own category for display
+  Object.keys(idealRatio).forEach(k => counts[k] = 0);
+  periodItems.forEach(i => {
+    let nt = i.nutrition || autoNutrition(i.category);
+    if (i.category === '坚果') nt = '坚果';
+    if (counts[nt] !== undefined) counts[nt]++;
+    else counts['其他']++;
+  });
+
+  const total = Math.max(1, Object.values(counts).reduce((a, b) => a + b, 0));
+  const analysisDiv = document.getElementById('nutritionAnalysis');
+  const adviceDiv = document.getElementById('nutritionAdvice');
+
+  // Render bars
+  const displayTypes = ['蛋白质', '蔬菜水果', '奶制品', '碳水主食', '坚果'];
+  analysisDiv.innerHTML = displayTypes.map(k => {
+    const info = idealRatio[k];
+    const actual = counts[k] / total;
+    const ideal = info.ratio;
+    const pct = Math.round(actual * 100);
+    const idealPct = Math.round(ideal * 100);
+    const nt = NUTRITION_TYPES[k] || { icon: '🥜', color: '#8B5CF6' };
+    const barColor = actual < ideal * 0.5 ? 'var(--danger)' : actual < ideal * 0.8 ? 'var(--warning)' : 'var(--primary)';
+    const statusIcon = actual < ideal * 0.5 ? '🔴' : actual < ideal * 0.8 ? '🟡' : '🟢';
+    return `<div style="margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">
+        <span style="font-size:12px">${statusIcon} ${nt.icon || '🥜'} ${info.label}</span>
+        <span style="font-size:11px;color:var(--text-secondary)">${counts[k]}项 (${pct}%) · 建议${idealPct}%</span>
+      </div>
+      <div style="position:relative;height:8px;background:#E5E7EB;border-radius:4px;overflow:hidden">
+        <div style="position:absolute;left:${idealPct}%;top:0;bottom:0;width:2px;background:#9CA3AF;z-index:1"></div>
+        <div style="width:${pct}%;height:100%;background:${barColor};border-radius:4px;transition:width 0.3s"></div>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Generate advice
+  const advice = [];
+  displayTypes.forEach(k => {
+    const actual = counts[k] / total;
+    const ideal = idealRatio[k].ratio;
+    if (actual < ideal * 0.5) {
+      advice.push({ level: '🔴', text: `${NUTRITION_TYPES[k]?.icon || '🥜'} ${idealRatio[k].label}摄入明显不足！${idealRatio[k].tip}` });
+    } else if (actual < ideal * 0.8) {
+      advice.push({ level: '🟡', text: `${NUTRITION_TYPES[k]?.icon || '🥜'} ${idealRatio[k].label}可以再多一些。${idealRatio[k].tip}` });
+    }
+  });
+
+  if (advice.length === 0) {
+    adviceDiv.innerHTML = '<div style="text-align:center;font-size:13px;color:var(--primary);padding:8px">🎉 近' + nutPeriodDays + '天营养摄入比较均衡，继续保持！</div>';
+  } else {
+    adviceDiv.innerHTML = `<div style="font-size:13px;font-weight:600;margin-bottom:6px">📋 建议（近${nutPeriodDays}天）</div>` +
+      advice.map(a => `<div style="font-size:12px;color:var(--text-secondary);line-height:1.6;margin-bottom:4px;padding:6px 8px;background:var(--bg);border-radius:8px">${a.level} ${a.text}</div>`).join('');
+  }
+
+  if (total <= 1 && periodItems.length === 0) {
+    analysisDiv.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-secondary);font-size:13px">暂无近' + nutPeriodDays + '天的数据</div>';
+    adviceDiv.innerHTML = '';
+  }
 }
 
 // ===== Recipe Ingredient Picker + AI Search =====
