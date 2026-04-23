@@ -260,6 +260,7 @@ body {
     <div class="filter-tab" onclick="setFilter('肉类',this)">🥩 肉类</div>
     <div class="filter-tab" onclick="setFilter('海鲜',this)">🦐 海鲜</div>
     <div class="filter-tab" onclick="setFilter('乳制品',this)">🥛 乳制品</div>
+    <div class="filter-tab" onclick="setFilter('坚果',this)">🥜 坚果</div>
     <div class="filter-tab" onclick="setFilter('其他',this)">📦 其他</div>
   </div>
   <div class="section">
@@ -450,6 +451,7 @@ body {
         <div class="cat-chip" onclick="selectCat(this)" data-cat="蛋类">🥚 蛋类</div>
         <div class="cat-chip" onclick="selectCat(this)" data-cat="乳制品">🥛 乳制品</div>
         <div class="cat-chip" onclick="selectCat(this)" data-cat="豆制品">🫘 豆制品</div>
+        <div class="cat-chip" onclick="selectCat(this)" data-cat="坚果">🥜 坚果</div>
         <div class="cat-chip" onclick="selectCat(this)" data-cat="调味料">🧂 调味料</div>
         <div class="cat-chip" onclick="selectCat(this)" data-cat="主食">🍚 主食</div>
         <div class="cat-chip" onclick="selectCat(this)" data-cat="其他">📦 其他</div>
@@ -536,6 +538,7 @@ body {
         <div class="cat-chip" onclick="selectEditCat(this)" data-cat="蛋类">🥚 蛋类</div>
         <div class="cat-chip" onclick="selectEditCat(this)" data-cat="乳制品">🥛 乳制品</div>
         <div class="cat-chip" onclick="selectEditCat(this)" data-cat="豆制品">🫘 豆制品</div>
+        <div class="cat-chip" onclick="selectEditCat(this)" data-cat="坚果">🥜 坚果</div>
         <div class="cat-chip" onclick="selectEditCat(this)" data-cat="调味料">🧂 调味料</div>
         <div class="cat-chip" onclick="selectEditCat(this)" data-cat="主食">🍚 主食</div>
         <div class="cat-chip" onclick="selectEditCat(this)" data-cat="其他">📦 其他</div>
@@ -606,11 +609,11 @@ body {
 <script>
 const STORE_KEY = 'food_inventory';
 const SETTINGS_KEY = 'food_settings';
-const CAT_ICONS = {'蔬菜':'🥬','水果':'🍎','肉类':'🥩','海鲜':'🦐','蛋类':'🥚','乳制品':'🥛','豆制品':'🫘','调味料':'🧂','主食':'🍚','其他':'📦'};
+const CAT_ICONS = {'蔬菜':'🥬','水果':'🍎','肉类':'🥩','海鲜':'🦐','蛋类':'🥚','乳制品':'🥛','豆制品':'🫘','坚果':'🥜','调味料':'🧂','主食':'🍚','其他':'📦'};
 
 // Nutritional categories
 const NUTRITION_TYPES = {
-  '蛋白质': { icon: '💪', color: '#EF4444', items: ['肉类','海鲜','蛋类','豆制品'] },
+  '蛋白质': { icon: '💪', color: '#EF4444', items: ['肉类','海鲜','蛋类','豆制品','坚果'] },
   '蔬菜水果': { icon: '🥗', color: '#22C55E', items: ['蔬菜','水果'] },
   '奶制品': { icon: '🥛', color: '#3B82F6', items: ['乳制品'] },
   '碳水主食': { icon: '🍚', color: '#F59E0B', items: ['主食'] },
@@ -630,7 +633,7 @@ function autoNutrition(cat) {
 // Default shelf life by category (days, refrigerated)
 const DEFAULT_SHELF = {
   '蔬菜': 5, '水果': 7, '肉类': 3, '海鲜': 2,
-  '蛋类': 21, '乳制品': 7, '豆制品': 3, '调味料': 180, '主食': 30, '其他': 7
+  '蛋类': 21, '乳制品': 7, '豆制品': 3, '坚果': 90, '调味料': 180, '主食': 30, '其他': 7
 };
 
 // Recipe database
@@ -1394,6 +1397,15 @@ const FOOD_DB = [
   {kw:['姜','生姜'],cat:'调味料',nut:'调味料',shelf:14,storage:'常温'},
   {kw:['蒜','大蒜','蒜头'],cat:'调味料',nut:'调味料',shelf:14,storage:'常温'},
   {kw:['葱','小葱','大葱'],cat:'蔬菜',nut:'蔬菜水果',shelf:5,storage:'冷藏'},
+  {kw:['核桃','walnut'],cat:'坚果',nut:'蛋白质',shelf:90,storage:'常温'},
+  {kw:['杏仁','巴旦木','almond'],cat:'坚果',nut:'蛋白质',shelf:90,storage:'常温'},
+  {kw:['腰果','cashew'],cat:'坚果',nut:'蛋白质',shelf:90,storage:'常温'},
+  {kw:['花生','peanut'],cat:'坚果',nut:'蛋白质',shelf:90,storage:'常温'},
+  {kw:['开心果','pistachio'],cat:'坚果',nut:'蛋白质',shelf:90,storage:'常温'},
+  {kw:['夏威夷果','澳洲坚果'],cat:'坚果',nut:'蛋白质',shelf:90,storage:'常温'},
+  {kw:['松子'],cat:'坚果',nut:'蛋白质',shelf:60,storage:'冷藏'},
+  {kw:['瓜子','葵花籽'],cat:'坚果',nut:'蛋白质',shelf:90,storage:'常温'},
+  {kw:['榛子','hazelnut'],cat:'坚果',nut:'蛋白质',shelf:90,storage:'常温'},
 ];
 
 function addAllScanned() {
