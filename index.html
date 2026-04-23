@@ -313,6 +313,20 @@ body {
     </div>
   </div>
   <div class="section">
+    <div class="section-title">🤖 AI 识别设置</div>
+    <div class="settings-item" style="flex-direction:column;align-items:stretch;gap:8px">
+      <div class="settings-label">Gemini API Key（用于拍照识别食材）</div>
+      <div style="display:flex;gap:6px">
+        <input type="password" id="geminiKey" placeholder="粘贴 API Key" style="flex:1;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px">
+        <button onclick="saveGeminiKey()" style="padding:8px 14px;border:none;border-radius:8px;background:var(--primary);color:white;font-size:13px;cursor:pointer">保存</button>
+      </div>
+      <div style="font-size:11px;color:var(--text-secondary);line-height:1.5">
+        免费获取：访问 <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--info)">aistudio.google.com/apikey</a> 创建密钥<br>
+        Gemini 2.0 Flash 免费额度充足，足够日常使用
+      </div>
+    </div>
+  </div>
+  <div class="section">
     <div class="section-title">⚙️ 数据管理</div>
     <button onclick="exportData()" style="width:100%;padding:12px;border:1.5px solid var(--border);border-radius:10px;background:var(--card);font-size:14px;cursor:pointer;margin-bottom:8px">📤 导出数据</button>
     <button onclick="document.getElementById('importFile').click()" style="width:100%;padding:12px;border:1.5px solid var(--border);border-radius:10px;background:var(--card);font-size:14px;cursor:pointer;margin-bottom:8px">📥 导入数据</button>
@@ -322,32 +336,70 @@ body {
 </div>
 
 <!-- FAB group -->
-<button class="fab fab-scan" onclick="openQuickAdd()" style="bottom:150px;background:var(--info);width:48px;height:48px;font-size:20px">⚡</button>
+<button class="fab fab-scan" onclick="openScanModal()" style="bottom:150px;background:var(--info);width:48px;height:48px;font-size:20px">📷</button>
 <button class="fab" onclick="openAddModal()">+</button>
 
-<!-- Quick Add Modal -->
+<!-- Scan & Quick Add Modal -->
 <div class="modal-overlay" id="scanModal">
   <div class="modal" style="max-height:90vh;overflow-y:auto">
-    <h2>⚡ 快速添加食材</h2>
-    <div style="font-size:13px;color:var(--text-secondary);margin-bottom:12px">点选常见食材，快速批量添加</div>
-    <div style="display:flex;gap:6px;margin-bottom:14px">
-      <input type="text" id="quickSearch" placeholder="🔍 搜索食材..." oninput="filterQuickAdd()" style="flex:1;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px">
+    <h2>📷 添加食材</h2>
+
+    <!-- Tab: Photo / Quick Pick -->
+    <div style="display:flex;gap:0;margin-bottom:14px;border-radius:10px;overflow:hidden;border:1.5px solid var(--border)">
+      <button id="tabPhoto" onclick="switchScanTab('photo')" style="flex:1;padding:10px;border:none;background:var(--primary);color:white;font-size:13px;font-weight:600;cursor:pointer">📸 拍照识别</button>
+      <button id="tabQuick" onclick="switchScanTab('quick')" style="flex:1;padding:10px;border:none;background:white;color:var(--text);font-size:13px;font-weight:600;cursor:pointer">⚡ 快速选择</button>
     </div>
-    <div id="quickCatTabs" style="display:flex;gap:6px;overflow-x:auto;margin-bottom:12px;padding-bottom:4px">
-      <div class="filter-tab active" onclick="setQuickCat('全部',this)">全部</div>
-      <div class="filter-tab" onclick="setQuickCat('蛋白质',this)">💪 蛋白质</div>
-      <div class="filter-tab" onclick="setQuickCat('蔬菜水果',this)">🥗 蔬果</div>
-      <div class="filter-tab" onclick="setQuickCat('奶制品',this)">🥛 奶制品</div>
-      <div class="filter-tab" onclick="setQuickCat('碳水主食',this)">🍚 主食</div>
-      <div class="filter-tab" onclick="setQuickCat('调味料',this)">🧂 调味</div>
+
+    <!-- Photo Tab -->
+    <div id="photoTab">
+      <div id="scanUploadArea" style="border:2px dashed var(--border);border-radius:12px;padding:24px;text-align:center;cursor:pointer;margin-bottom:12px" onclick="document.getElementById('scanFile').click()">
+        <div style="font-size:32px;margin-bottom:6px">📸</div>
+        <div style="font-size:13px;color:var(--text-secondary)">点击拍照或选择订单截图</div>
+        <input type="file" id="scanFile" accept="image/*" style="display:none" onchange="handleScanFile(event)">
+      </div>
+      <div id="scanPreview" style="display:none;margin-bottom:12px">
+        <img id="scanImg" style="width:100%;border-radius:10px;margin-bottom:8px;max-height:200px;object-fit:contain">
+        <div id="scanProgress" style="display:none">
+          <div style="font-size:13px;color:var(--text-secondary);margin-bottom:6px" id="scanStatus">正在识别中...</div>
+          <div class="progress-bar" style="height:6px"><div class="progress-fill" id="scanProgressBar" style="width:0%;background:var(--primary);transition:width 0.3s"></div></div>
+        </div>
+      </div>
+      <div id="noKeyWarning" style="display:none;background:#FEF3C7;border-radius:10px;padding:12px;margin-bottom:12px;font-size:12px;color:#92400E;line-height:1.5">
+        ⚠️ 需要先在「设置」页配置 Gemini API Key 才能使用拍照识别。<br>
+        <a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--info)">点此免费获取 →</a>
+      </div>
     </div>
-    <div id="quickFoodGrid" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px"></div>
-    <div id="quickSelected" style="display:none;border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
-      <div style="font-size:14px;font-weight:600;margin-bottom:10px">已选食材（可编辑数量和保质期）</div>
-      <div id="quickSelectedList"></div>
-      <button onclick="addAllScanned()" class="btn-submit" style="width:100%;margin-top:12px">全部添加到冰箱</button>
+
+    <!-- Quick Tab -->
+    <div id="quickTab" style="display:none">
+      <div style="display:flex;gap:6px;margin-bottom:10px">
+        <input type="text" id="quickSearch" placeholder="🔍 搜索食材..." oninput="filterQuickAdd()" style="flex:1;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px">
+      </div>
+      <div id="quickCatTabs" style="display:flex;gap:6px;overflow-x:auto;margin-bottom:10px;padding-bottom:4px">
+        <div class="filter-tab active" onclick="setQuickCat('全部',this)">全部</div>
+        <div class="filter-tab" onclick="setQuickCat('蛋白质',this)">💪 蛋白</div>
+        <div class="filter-tab" onclick="setQuickCat('蔬菜水果',this)">🥗 蔬果</div>
+        <div class="filter-tab" onclick="setQuickCat('奶制品',this)">🥛 奶</div>
+        <div class="filter-tab" onclick="setQuickCat('碳水主食',this)">🍚 主食</div>
+        <div class="filter-tab" onclick="setQuickCat('调味料',this)">🧂 调味</div>
+      </div>
+      <div id="quickFoodGrid" style="display:flex;flex-wrap:wrap;gap:8px;max-height:200px;overflow-y:auto;margin-bottom:10px"></div>
     </div>
-    <div class="form-actions">
+
+    <!-- Shared: selected items + manual add -->
+    <div id="selectedSection" style="display:none;border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
+      <div style="font-size:14px;font-weight:600;margin-bottom:10px">已选食材（可编辑）</div>
+      <div id="selectedList"></div>
+      <button onclick="addAllScanned()" class="btn-submit" style="width:100%;margin-top:10px">全部添加到冰箱</button>
+    </div>
+    <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:12px">
+      <div style="font-size:13px;color:var(--text-secondary);margin-bottom:6px">手动添加：</div>
+      <div style="display:flex;gap:6px">
+        <input type="text" id="manualFoodName" placeholder="输入食材名称" style="flex:1;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px" onkeydown="if(event.key==='Enter')addManualFood()">
+        <button onclick="addManualFood()" style="padding:8px 14px;border:none;border-radius:8px;background:var(--primary);color:white;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">+ 添加</button>
+      </div>
+    </div>
+    <div class="form-actions" style="margin-top:12px">
       <button class="btn-cancel" onclick="closeScanModal()">关闭</button>
     </div>
   </div>
@@ -805,6 +857,10 @@ function refresh() {
 
   // Recipes
   renderRecipes(active);
+
+  // Gemini key
+  const gk = document.getElementById('geminiKey');
+  if (gk) gk.value = getGeminiKey();
 }
 
 function renderRecipes(activeItems) {
@@ -929,28 +985,152 @@ function clearAll() {
   refresh();
 }
 
-// ===== Quick Add =====
+// ===== Scan + Quick Add =====
 let scannedItems = [];
 let quickCatFilter = '全部';
+let currentScanTab = 'photo';
 
-function openQuickAdd() {
+function getGeminiKey() { return localStorage.getItem('gemini_api_key') || ''; }
+function saveGeminiKey() {
+  const key = document.getElementById('geminiKey').value.trim();
+  localStorage.setItem('gemini_api_key', key);
+  showToast(key ? '✅ API Key 已保存' : '已清除 API Key');
+}
+
+function openScanModal() {
   document.getElementById('scanModal').classList.add('show');
   scannedItems = [];
-  quickCatFilter = '全部';
-  document.getElementById('quickSearch').value = '';
-  document.querySelectorAll('#quickCatTabs .filter-tab').forEach((t,i) => t.classList.toggle('active', i===0));
-  renderQuickGrid();
-  renderQuickSelected();
+  currentScanTab = 'photo';
+  switchScanTab('photo');
+  document.getElementById('scanPreview').style.display = 'none';
+  document.getElementById('scanUploadArea').style.display = 'block';
+  document.getElementById('scanFile').value = '';
+  document.getElementById('manualFoodName').value = '';
+  renderSelected();
+  // Check API key
+  const hasKey = !!getGeminiKey();
+  document.getElementById('noKeyWarning').style.display = hasKey ? 'none' : 'block';
 }
 function closeScanModal() { document.getElementById('scanModal').classList.remove('show'); }
 
+function switchScanTab(tab) {
+  currentScanTab = tab;
+  document.getElementById('photoTab').style.display = tab === 'photo' ? 'block' : 'none';
+  document.getElementById('quickTab').style.display = tab === 'quick' ? 'block' : 'none';
+  document.getElementById('tabPhoto').style.background = tab === 'photo' ? 'var(--primary)' : 'white';
+  document.getElementById('tabPhoto').style.color = tab === 'photo' ? 'white' : 'var(--text)';
+  document.getElementById('tabQuick').style.background = tab === 'quick' ? 'var(--primary)' : 'white';
+  document.getElementById('tabQuick').style.color = tab === 'quick' ? 'white' : 'var(--text)';
+  if (tab === 'quick') {
+    document.getElementById('quickSearch').value = '';
+    quickCatFilter = '全部';
+    document.querySelectorAll('#quickCatTabs .filter-tab').forEach((t,i) => t.classList.toggle('active', i===0));
+    renderQuickGrid();
+  }
+}
+
+// --- Photo / Gemini AI ---
+function handleScanFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const key = getGeminiKey();
+  if (!key) {
+    document.getElementById('noKeyWarning').style.display = 'block';
+    showToast('⚠️ 请先在设置页配置 Gemini API Key');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    document.getElementById('scanImg').src = ev.target.result;
+    document.getElementById('scanPreview').style.display = 'block';
+    document.getElementById('scanUploadArea').style.display = 'none';
+    document.getElementById('scanProgress').style.display = 'block';
+    document.getElementById('scanStatus').textContent = '正在 AI 识别中...';
+    document.getElementById('scanProgressBar').style.width = '30%';
+    // Extract base64 data
+    const base64 = ev.target.result.split(',')[1];
+    const mimeType = file.type || 'image/jpeg';
+    callGemini(base64, mimeType);
+  };
+  reader.readAsDataURL(file);
+}
+
+async function callGemini(base64, mimeType) {
+  const key = getGeminiKey();
+  const prompt = `你是一个食材识别助手。请仔细分析这张图片（可能是外卖订单、超市购物小票、冰箱照片或食材照片），识别出所有食材/食品。
+
+对每个识别到的食材，返回一个JSON数组，每个元素包含：
+- name: 食材名称（简短，如"鸡胸肉"、"西兰花"、"纯牛奶"）
+- category: 分类（只能是以下之一：蔬菜、水果、肉类、海鲜、蛋类、乳制品、豆制品、调味料、主食、其他）
+- nutrition: 营养分类（只能是以下之一：蛋白质、蔬菜水果、奶制品、碳水主食、调味料、其他）
+- quantity: 数量（如"500g"、"2盒"、"1瓶"，识别不到就写"适量"）
+- shelf_life_days: 建议保质期天数（冷藏条件下的合理天数）
+- storage: 存储方式（冷藏、冷冻、常温）
+
+只返回JSON数组，不要其他文字。如果图片中没有食材，返回空数组 []。`;
+
+  try {
+    document.getElementById('scanProgressBar').style.width = '60%';
+    const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { text: prompt },
+            { inline_data: { mime_type: mimeType, data: base64 } }
+          ]
+        }],
+        generationConfig: { temperature: 0.1 }
+      })
+    });
+
+    document.getElementById('scanProgressBar').style.width = '90%';
+    const data = await resp.json();
+
+    if (data.error) {
+      throw new Error(data.error.message || 'API 错误');
+    }
+
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    console.log('Gemini response:', text);
+
+    // Extract JSON from response
+    const jsonMatch = text.match(/\[[\s\S]*\]/);
+    if (jsonMatch) {
+      const items = JSON.parse(jsonMatch[0]);
+      scannedItems = items.map(it => ({
+        name: it.name || '未知',
+        category: it.category || '其他',
+        nutrition: it.nutrition || '其他',
+        quantity: it.quantity || '适量',
+        shelf_life_days: parseInt(it.shelf_life_days) || 7,
+        storage: it.storage || '冷藏'
+      }));
+    }
+
+    document.getElementById('scanProgress').style.display = 'none';
+    renderSelected();
+    if (scannedItems.length > 0) {
+      showToast(`✅ 识别到 ${scannedItems.length} 个食材`);
+    } else {
+      showToast('未识别到食材，可手动添加');
+    }
+  } catch (err) {
+    console.error('Gemini error:', err);
+    document.getElementById('scanProgress').style.display = 'none';
+    document.getElementById('scanStatus').textContent = '';
+    showToast('❌ 识别失败：' + (err.message || '请检查 API Key'));
+  }
+}
+
+// --- Quick Pick ---
 function setQuickCat(cat, el) {
   quickCatFilter = cat;
   document.querySelectorAll('#quickCatTabs .filter-tab').forEach(t => t.classList.remove('active'));
   el.classList.add('active');
   renderQuickGrid();
 }
-
 function filterQuickAdd() { renderQuickGrid(); }
 
 function renderQuickGrid() {
@@ -960,7 +1140,6 @@ function renderQuickGrid() {
     if (search && !f.kw.some(k => k.includes(search)) && !f.cat.includes(search)) return false;
     return true;
   });
-  // Deduplicate by canonical name and show only unique items
   const seen = new Set();
   foods = foods.filter(f => { if (seen.has(f.kw[0])) return false; seen.add(f.kw[0]); return true; });
   const selectedNames = new Set(scannedItems.map(s => s.name));
@@ -970,7 +1149,7 @@ function renderQuickGrid() {
     return `<div class="quick-food${sel?' selected':''}" onclick="toggleQuickFood('${f.kw[0]}')">${CAT_ICONS[f.cat]||'📦'} ${f.kw[0]}</div>`;
   }).join('');
   if (foods.length === 0) {
-    grid.innerHTML = `<div style="width:100%;text-align:center;padding:16px;color:var(--text-secondary);font-size:13px">没有匹配的食材${search ? '<br>可以点右下角 + 手动添加' : ''}</div>`;
+    grid.innerHTML = '<div style="width:100%;text-align:center;padding:12px;color:var(--text-secondary);font-size:13px">没有匹配的食材</div>';
   }
 }
 
@@ -988,12 +1167,13 @@ function toggleQuickFood(name) {
     }
   }
   renderQuickGrid();
-  renderQuickSelected();
+  renderSelected();
 }
 
-function renderQuickSelected() {
-  const container = document.getElementById('quickSelected');
-  const list = document.getElementById('quickSelectedList');
+// --- Shared: selected items ---
+function renderSelected() {
+  const container = document.getElementById('selectedSection');
+  const list = document.getElementById('selectedList');
   if (scannedItems.length === 0) {
     container.style.display = 'none';
     return;
@@ -1002,18 +1182,46 @@ function renderQuickSelected() {
   list.innerHTML = scannedItems.map((item, i) => `
     <div class="scan-item" style="flex-wrap:wrap">
       <span>${CAT_ICONS[item.category]||'📦'}</span>
-      <span style="font-size:13px;font-weight:600;min-width:50px">${item.name}</span>
-      <input type="text" value="${item.quantity}" onchange="scannedItems[${i}].quantity=this.value" style="width:55px" placeholder="数量">
+      <input type="text" value="${item.name}" onchange="scannedItems[${i}].name=this.value" style="flex:1;min-width:50px">
+      <input type="text" value="${item.quantity}" onchange="scannedItems[${i}].quantity=this.value" style="width:50px" placeholder="数量">
       <div style="display:flex;align-items:center;gap:2px">
-        <input type="number" value="${item.shelf_life_days}" onchange="scannedItems[${i}].shelf_life_days=parseInt(this.value)||7" style="width:42px;border:1px solid var(--border);border-radius:6px;padding:6px 4px;font-size:12px;text-align:center" min="1">
+        <input type="number" value="${item.shelf_life_days}" onchange="scannedItems[${i}].shelf_life_days=parseInt(this.value)||7" style="width:40px;border:1px solid var(--border);border-radius:6px;padding:6px 3px;font-size:12px;text-align:center" min="1">
         <span style="font-size:11px;color:var(--text-secondary)">天</span>
       </div>
-      <button class="scan-remove" onclick="scannedItems.splice(${i},1);renderQuickGrid();renderQuickSelected()">×</button>
+      <button class="scan-remove" onclick="removeScanned(${i})">×</button>
     </div>
-  `).join('') + `<div style="text-align:center;margin-top:6px">
-    <span style="font-size:12px;color:var(--text-secondary)">共 ${scannedItems.length} 个 · 可编辑数量和保质期</span>
+  `).join('') + `<div style="text-align:center;margin-top:4px">
+    <span style="font-size:12px;color:var(--text-secondary)">共 ${scannedItems.length} 个 · 可编辑名称、数量、保质期</span>
   </div>`;
 }
+
+function removeScanned(i) {
+  scannedItems.splice(i, 1);
+  renderSelected();
+  if (currentScanTab === 'quick') renderQuickGrid();
+}
+
+function addManualFood() {
+  const input = document.getElementById('manualFoodName');
+  const name = input.value.trim();
+  if (!name) return;
+  const match = FOOD_DB.find(f => f.kw.some(k => name.includes(k) || k.includes(name)));
+  if (match) {
+    scannedItems.push({
+      name: match.kw[0], category: match.cat, nutrition: match.nut,
+      quantity: '适量', shelf_life_days: match.shelf, storage: match.storage
+    });
+  } else {
+    scannedItems.push({
+      name, category: '其他', nutrition: '其他',
+      quantity: '适量', shelf_life_days: 7, storage: '冷藏'
+    });
+  }
+  input.value = '';
+  renderSelected();
+  if (currentScanTab === 'quick') renderQuickGrid();
+}
+
 const FOOD_DB = [
   {kw:['鸡胸肉','鸡胸'],cat:'肉类',nut:'蛋白质',shelf:5,storage:'冷藏'},
   {kw:['鸡翅','鸡中翅','翅中','翅根'],cat:'肉类',nut:'蛋白质',shelf:3,storage:'冷藏'},
