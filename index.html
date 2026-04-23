@@ -283,23 +283,30 @@ body {
 <!-- Page: 菜谱推荐 -->
 <div class="page" id="page-recipes">
   <div class="section" style="margin-top:16px">
-    <div class="section-title">🔍 AI 菜谱搜索</div>
-    <div style="display:flex;gap:6px;margin-bottom:10px">
-      <input type="text" id="recipeQuery" placeholder="想吃什么？如：快手菜、减脂餐、红烧..." style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:10px 14px;font-size:14px" onkeydown="if(event.key==='Enter')searchRecipeFree()">
-      <button onclick="searchRecipeFree()" style="padding:10px 16px;border:none;border-radius:10px;background:var(--info);color:white;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap">搜索</button>
-    </div>
-    <div id="freeRecipeResult"></div>
-  </div>
-  <div class="section">
-    <div class="section-title">🥘 用冰箱食材做菜</div>
+    <div class="section-title">🥘 选一个主食材，看看能做什么菜</div>
     <div style="font-size:13px;color:var(--text-secondary);margin-bottom:10px">
-      勾选要消耗的食材，AI 推荐菜谱
+      选择一个食材品类，AI 帮你搜索搭配方案和菜谱
     </div>
-    <div id="ingredientPicker" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px"></div>
-    <button onclick="searchRecipesAI()" id="aiRecipeBtn" style="width:100%;padding:12px;border:none;border-radius:10px;background:var(--info);color:white;font-size:14px;font-weight:600;cursor:pointer;display:none">
-      🔍 AI 搜索菜谱
-    </button>
-    <div id="aiRecipeResult" style="margin-top:12px"></div>
+    <!-- Category picker -->
+    <div id="recipeCatPicker" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+      <div class="quick-food" onclick="pickRecipeCat(this,'鸡肉')">🐔 鸡肉</div>
+      <div class="quick-food" onclick="pickRecipeCat(this,'猪肉')">🐷 猪肉</div>
+      <div class="quick-food" onclick="pickRecipeCat(this,'牛肉')">🐂 牛肉</div>
+      <div class="quick-food" onclick="pickRecipeCat(this,'鱼虾海鲜')">🦐 鱼虾</div>
+      <div class="quick-food" onclick="pickRecipeCat(this,'蛋/豆腐')">🥚 蛋/豆腐</div>
+      <div class="quick-food" onclick="pickRecipeCat(this,'蔬菜')">🥬 蔬菜</div>
+      <div class="quick-food" onclick="pickRecipeCat(this,'面食/主食')">🍜 面食</div>
+      <div class="quick-food" onclick="pickRecipeCat(this,'汤/粥')">🍲 汤粥</div>
+    </div>
+    <!-- Or pick from fridge -->
+    <div style="font-size:13px;color:var(--text-secondary);margin-bottom:6px">或者从冰箱里选：</div>
+    <div id="fridgeIngredientPicker" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px"></div>
+    <!-- Custom input -->
+    <div style="display:flex;gap:6px;margin-bottom:12px">
+      <input type="text" id="recipeIngredientInput" placeholder="或直接输入食材，如：排骨、三文鱼..." style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:10px 14px;font-size:14px" onkeydown="if(event.key==='Enter')searchByIngredient()">
+      <button onclick="searchByIngredient()" style="padding:10px 16px;border:none;border-radius:10px;background:var(--primary);color:white;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap">搜菜谱</button>
+    </div>
+    <div id="ingredientRecipeResult"></div>
   </div>
   <div class="section">
     <div class="section-title">🍳 本地推荐菜谱</div>
@@ -978,7 +985,7 @@ function refresh() {
 
   // Recipes
   renderRecipes(active);
-  renderIngredientPicker(active);
+  renderFridgeIngredientPicker(active);
 
   // Azure config
   const ac = getAzureConfig();
@@ -1620,88 +1627,83 @@ function renderNutritionAnalysis() {
   }
 }
 
-// ===== Recipe Ingredient Picker + AI Search =====
-let selectedIngredients = new Set();
+// ===== Recipe: Pick ingredient + AI search =====
+let selectedRecipeIngredient = '';
 
-function renderIngredientPicker(activeItems) {
-  const picker = document.getElementById('ingredientPicker');
+function renderFridgeIngredientPicker(activeItems) {
+  const picker = document.getElementById('fridgeIngredientPicker');
   if (!picker) return;
-
-  // Sort: expiring/expired first, then fresh
   const sorted = [...activeItems].sort((a, b) => {
     const sa = getStatus(a) === 'expired' ? 0 : getStatus(a) === 'expiring' ? 1 : 2;
     const sb = getStatus(b) === 'expired' ? 0 : getStatus(b) === 'expiring' ? 1 : 2;
     if (sa !== sb) return sa - sb;
     return getDaysLeft(a) - getDaysLeft(b);
   });
-
   picker.innerHTML = sorted.map(item => {
     const status = getStatus(item);
     const daysLeft = getDaysLeft(item);
-    const sel = selectedIngredients.has(item.id);
+    const sel = selectedRecipeIngredient === item.name;
     const urgentStyle = status === 'expired' ? 'border-color:var(--danger);background:#FEE2E2' :
                         status === 'expiring' ? 'border-color:var(--warning);background:#FEF3C7' : '';
-    const label = status === 'expired' ? '已过期' : status === 'expiring' ? `${daysLeft}天` : `${daysLeft}天`;
-    return `<div class="quick-food${sel ? ' selected' : ''}" style="${urgentStyle}" onclick="toggleIngredient(${item.id})">
-      ${CAT_ICONS[item.category] || '📦'} ${item.name}
-      <span style="font-size:10px;opacity:0.7">${label}</span>
+    const label = status === 'expired' ? '过期' : `${daysLeft}天`;
+    return `<div class="quick-food${sel ? ' selected' : ''}" style="${urgentStyle}" onclick="pickFridgeIngredient('${item.name}',this)">
+      ${CAT_ICONS[item.category] || '📦'} ${item.name} <span style="font-size:10px;opacity:0.7">${label}</span>
     </div>`;
   }).join('');
-
-  if (sorted.length === 0) {
-    picker.innerHTML = '<div style="width:100%;text-align:center;padding:12px;color:var(--text-secondary);font-size:13px">冰箱里还没有食材</div>';
-  }
-
-  const btn = document.getElementById('aiRecipeBtn');
-  if (btn) btn.style.display = selectedIngredients.size > 0 ? 'block' : 'none';
+  if (sorted.length === 0) picker.innerHTML = '<span style="font-size:12px;color:var(--text-secondary)">冰箱里还没有食材</span>';
 }
 
-function toggleIngredient(id) {
-  if (selectedIngredients.has(id)) selectedIngredients.delete(id);
-  else selectedIngredients.add(id);
-  const activeItems = getItems().filter(i => i.status === 'active');
-  renderIngredientPicker(activeItems);
+function pickRecipeCat(el, cat) {
+  document.querySelectorAll('#recipeCatPicker .quick-food, #fridgeIngredientPicker .quick-food').forEach(e => e.classList.remove('selected'));
+  el.classList.add('selected');
+  selectedRecipeIngredient = cat;
+  document.getElementById('recipeIngredientInput').value = cat;
 }
 
-// Free recipe search
-async function searchRecipeFree() {
-  const query = document.getElementById('recipeQuery').value.trim();
-  if (!query) { showToast('请输入想吃什么'); return; }
+function pickFridgeIngredient(name, el) {
+  document.querySelectorAll('#recipeCatPicker .quick-food, #fridgeIngredientPicker .quick-food').forEach(e => e.classList.remove('selected'));
+  el.classList.add('selected');
+  selectedRecipeIngredient = name;
+  document.getElementById('recipeIngredientInput').value = name;
+}
 
+async function searchByIngredient() {
+  const ingredient = document.getElementById('recipeIngredientInput').value.trim() || selectedRecipeIngredient;
+  if (!ingredient) { showToast('请先选择或输入一个食材'); return; }
   const ac = getAzureConfig();
   if (!ac.endpoint || !ac.key) { showToast('⚠️ 请先配置 Azure OpenAI'); return; }
-
-  const resultDiv = document.getElementById('freeRecipeResult');
-  resultDiv.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary)">⏳ AI 正在搜索菜谱...</div>';
-
+  const resultDiv = document.getElementById('ingredientRecipeResult');
+  resultDiv.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary)">⏳ AI 正在为「' + ingredient + '」搜索菜谱...</div>';
   const items = getItems().filter(i => i.status === 'active');
-  const fridgeInfo = items.length > 0 ? `\n\n用户冰箱里有：${items.map(i => i.name).join('、')}。如果食谱中有冰箱里已有的食材请标注出来。` : '';
+  const fridgeList = items.length > 0 ? `\n用户冰箱里已有的食材：${items.map(i => i.name).join('、')}` : '';
+  const prompt = `你是一个中餐菜谱推荐专家。用户想用「${ingredient}」做菜。${fridgeList}
 
-  const prompt = `你是一个中餐菜谱推荐专家。用户想吃：${query}${fridgeInfo}
+请推荐 5 道用「${ingredient}」为主要食材的家常菜谱。不需要限定于冰箱已有食材，可以推荐任何搭配。
 
-请推荐 3-5 道相关菜谱。每道菜谱包含：
+每道菜谱包含：
 1. 菜名
-2. 需要的食材列表
-3. 简要做法（3-5步）
-4. 烹饪时间和难度
-5. 一句话推荐理由
+2. 需要搭配购买的其他食材（不含基础调味料如盐、油、酱油等）
+3. 如果用户冰箱里有部分搭配食材请标注
+4. 简要做法（3-4步）
+5. 烹饪时间和难度
+6. 一句话推荐理由
 
 请按 JSON 格式返回：
 [{
   "name": "菜名",
-  "ingredients": ["食材1", "食材2"],
-  "have_ingredients": ["冰箱里已有的食材"],
+  "main": "${ingredient}",
+  "need_to_buy": ["需要额外买的食材1", "食材2"],
+  "already_have": ["冰箱里已有的搭配食材"],
   "steps": ["步骤1", "步骤2"],
   "time": "15分钟",
   "difficulty": "简单",
   "tip": "推荐理由"
 }]
 
-只返回 JSON 数组。`;
+只返回 JSON 数组，推荐的菜要多样化（炒、炖、蒸、煮等不同做法）。`;
 
   const deployment = ac.deployment || 'gpt-4o';
   const url = `${ac.endpoint}/openai/deployments/${deployment}/chat/completions?api-version=2024-12-01-preview`;
-
   try {
     const resp = await fetch(url, {
       method: 'POST',
@@ -1714,21 +1716,26 @@ async function searchRecipeFree() {
     const jsonMatch = text.match(/\[[\s\S]*\]/);
     if (!jsonMatch) throw new Error('未能解析菜谱');
     const recipes = JSON.parse(jsonMatch[0]);
-
+    const buyMap = new Map();
+    recipes.forEach(r => (r.need_to_buy || []).forEach(item => {
+      if (!buyMap.has(item)) buyMap.set(item, []);
+      buyMap.get(item).push(r.name);
+    }));
     resultDiv.innerHTML = recipes.map(r => {
       const xhsUrl = `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(r.name + ' 做法')}`;
       return `<div class="recipe-card">
         <div style="display:flex;justify-content:space-between;align-items:center">
           <div class="recipe-title">${r.name}</div>
-          <a href="${xhsUrl}" target="_blank" style="font-size:12px;color:#FF2442;text-decoration:none;font-weight:600;white-space:nowrap">📕 小红书</a>
+          <a href="${xhsUrl}" target="_blank" style="font-size:12px;color:#FF2442;text-decoration:none;font-weight:600;white-space:nowrap;padding:4px 8px;background:#FFF0F0;border-radius:6px">📕 小红书</a>
         </div>
-        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+        <div style="display:flex;gap:6px;align-items:center;margin:6px 0">
           <span style="font-size:11px;padding:2px 8px;border-radius:8px;background:#EFF6FF;color:#1D4ED8">⏱ ${r.time}</span>
           <span style="font-size:11px;padding:2px 8px;border-radius:8px;background:#F0FDF4;color:#166534">${r.difficulty}</span>
         </div>
         <div class="recipe-tags">
-          ${(r.have_ingredients || []).map(m => `<span class="recipe-tag">✅ ${m}</span>`).join('')}
-          ${r.ingredients.filter(i => !(r.have_ingredients || []).includes(i)).map(m => `<span class="recipe-tag need">🛒 ${m}</span>`).join('')}
+          <span class="recipe-tag" style="background:#DBEAFE;color:#1E40AF">⭐ ${r.main || ingredient}</span>
+          ${(r.already_have || []).map(m => `<span class="recipe-tag">✅ 已有 ${m}</span>`).join('')}
+          ${(r.need_to_buy || []).map(m => `<span class="recipe-tag need">🛒 需买 ${m}</span>`).join('')}
         </div>
         <div style="margin-top:8px">
           ${r.steps.map((s, i) => `<div style="font-size:12px;color:var(--text-secondary);line-height:1.6;margin-bottom:2px"><span style="color:var(--primary);font-weight:600">${i + 1}.</span> ${s}</div>`).join('')}
@@ -1736,112 +1743,18 @@ async function searchRecipeFree() {
         ${r.tip ? `<div style="font-size:12px;color:var(--info);margin-top:6px">💡 ${r.tip}</div>` : ''}
       </div>`;
     }).join('');
+    if (buyMap.size > 0) {
+      resultDiv.innerHTML += `<div style="background:#FFF7ED;border-radius:12px;padding:14px;margin-top:12px">
+        <div style="font-size:14px;font-weight:600;margin-bottom:8px">🛒 建议购买清单</div>
+        ${[...buyMap.entries()].map(([item, dishes]) => `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #FED7AA">
+          <span style="font-size:13px">• ${item}</span>
+          <span style="font-size:11px;color:#9A3412">可做：${dishes.join('、')}</span>
+        </div>`).join('')}
+      </div>`;
+    }
+    showToast(`✅ 找到 ${recipes.length} 道「${ingredient}」菜谱`);
   } catch (err) {
     resultDiv.innerHTML = `<div style="text-align:center;padding:20px;color:var(--danger)">❌ ${err.message || '搜索失败'}</div>`;
-  }
-}
-
-async function searchRecipesAI() {
-  const ac = getAzureConfig();
-  if (!ac.endpoint || !ac.key) {
-    showToast('⚠️ 请先在设置页配置 Azure OpenAI');
-    return;
-  }
-
-  const items = getItems().filter(i => i.status === 'active');
-  const selected = items.filter(i => selectedIngredients.has(i.id));
-  if (selected.length === 0) { showToast('请先勾选食材'); return; }
-
-  const names = selected.map(i => {
-    const s = getStatus(i);
-    const d = getDaysLeft(i);
-    return `${i.name}（${s === 'expired' ? '已过期' : '还剩' + d + '天'}）`;
-  }).join('、');
-
-  const allNames = items.map(i => i.name).join('、');
-
-  const btn = document.getElementById('aiRecipeBtn');
-  const resultDiv = document.getElementById('aiRecipeResult');
-  btn.disabled = true;
-  btn.textContent = '🔍 正在搜索菜谱...';
-  resultDiv.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary)">⏳ AI 正在为你搜索菜谱...</div>';
-
-  const deployment = ac.deployment || 'gpt-4o';
-  const url = `${ac.endpoint}/openai/deployments/${deployment}/chat/completions?api-version=2024-12-01-preview`;
-
-  const prompt = `你是一个中餐菜谱推荐专家。用户选择了以下需要消耗的食材：${names}
-
-用户冰箱里所有食材：${allNames}
-
-请推荐 3-5 道适合的菜谱，优先消耗即将过期的食材。每道菜谱包含：
-1. 菜名
-2. 用到的已有食材（标注哪些是即将过期的）
-3. 需要额外购买的调料/配料
-4. 简要做法（3-5步）
-5. 烹饪时间
-6. 难度（简单/中等/较难）
-
-请按 JSON 格式返回：
-[{
-  "name": "菜名",
-  "used_ingredients": ["食材1（⚠️即将过期）", "食材2"],
-  "extra_needed": ["调料1"],
-  "steps": ["步骤1", "步骤2"],
-  "time": "15分钟",
-  "difficulty": "简单",
-  "tip": "一句话小贴士"
-}]
-
-只返回 JSON 数组。`;
-
-  try {
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'api-key': ac.key },
-      body: JSON.stringify({
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 3000,
-        temperature: 0.7
-      })
-    });
-
-    const data = await resp.json();
-    if (data.error) throw new Error(data.error.message);
-
-    const text = data.choices?.[0]?.message?.content || '';
-    const jsonMatch = text.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) throw new Error('未能解析菜谱');
-
-    const recipes = JSON.parse(jsonMatch[0]);
-    resultDiv.innerHTML = recipes.map(r => {
-      const xhsUrl = `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(r.name + ' 做法')}`;
-      return `<div class="recipe-card">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <div class="recipe-title">${r.name}</div>
-          <a href="${xhsUrl}" target="_blank" style="font-size:12px;color:#FF2442;text-decoration:none;font-weight:600;white-space:nowrap">📕 小红书</a>
-        </div>
-        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
-          <span style="font-size:11px;padding:2px 8px;border-radius:8px;background:#EFF6FF;color:#1D4ED8">⏱ ${r.time}</span>
-          <span style="font-size:11px;padding:2px 8px;border-radius:8px;background:#F0FDF4;color:#166534">${r.difficulty}</span>
-        </div>
-        <div class="recipe-tags">
-          ${r.used_ingredients.map(m => `<span class="recipe-tag">${m.includes('⚠') ? '' : '✅ '}${m}</span>`).join('')}
-          ${(r.extra_needed || []).map(m => `<span class="recipe-tag need">🛒 ${m}</span>`).join('')}
-        </div>
-        <div style="margin-top:8px">
-          ${r.steps.map((s, i) => `<div style="font-size:12px;color:var(--text-secondary);line-height:1.6;margin-bottom:2px"><span style="color:var(--primary);font-weight:600">${i + 1}.</span> ${s}</div>`).join('')}
-        </div>
-        ${r.tip ? `<div style="font-size:12px;color:var(--info);margin-top:6px">💡 ${r.tip}</div>` : ''}
-      </div>`;
-    }).join('');
-
-    showToast(`✅ 找到 ${recipes.length} 道菜谱`);
-  } catch (err) {
-    console.error('Recipe search error:', err);
-    resultDiv.innerHTML = `<div style="text-align:center;padding:20px;color:var(--danger)">❌ 搜索失败：${err.message || '请检查网络和 Azure 配置'}</div>`;
-  } finally {
-    btn.disabled = false;
-    btn.textContent = '🔍 AI 搜索菜谱';
   }
 }
 
