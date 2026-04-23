@@ -283,9 +283,17 @@ body {
 <!-- Page: 菜谱推荐 -->
 <div class="page" id="page-recipes">
   <div class="section" style="margin-top:16px">
-    <div class="section-title">🥘 选择要消耗的食材</div>
+    <div class="section-title">🔍 AI 菜谱搜索</div>
+    <div style="display:flex;gap:6px;margin-bottom:10px">
+      <input type="text" id="recipeQuery" placeholder="想吃什么？如：快手菜、减脂餐、红烧..." style="flex:1;border:1.5px solid var(--border);border-radius:10px;padding:10px 14px;font-size:14px" onkeydown="if(event.key==='Enter')searchRecipeFree()">
+      <button onclick="searchRecipeFree()" style="padding:10px 16px;border:none;border-radius:10px;background:var(--info);color:white;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap">搜索</button>
+    </div>
+    <div id="freeRecipeResult"></div>
+  </div>
+  <div class="section">
+    <div class="section-title">🥘 用冰箱食材做菜</div>
     <div style="font-size:13px;color:var(--text-secondary);margin-bottom:10px">
-      勾选食材后，AI 帮你搜索最合适的菜谱
+      勾选要消耗的食材，AI 推荐菜谱
     </div>
     <div id="ingredientPicker" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px"></div>
     <button onclick="searchRecipesAI()" id="aiRecipeBtn" style="width:100%;padding:12px;border:none;border-radius:10px;background:var(--info);color:white;font-size:14px;font-weight:600;cursor:pointer;display:none">
@@ -1655,6 +1663,84 @@ function toggleIngredient(id) {
   renderIngredientPicker(activeItems);
 }
 
+// Free recipe search
+async function searchRecipeFree() {
+  const query = document.getElementById('recipeQuery').value.trim();
+  if (!query) { showToast('请输入想吃什么'); return; }
+
+  const ac = getAzureConfig();
+  if (!ac.endpoint || !ac.key) { showToast('⚠️ 请先配置 Azure OpenAI'); return; }
+
+  const resultDiv = document.getElementById('freeRecipeResult');
+  resultDiv.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary)">⏳ AI 正在搜索菜谱...</div>';
+
+  const items = getItems().filter(i => i.status === 'active');
+  const fridgeInfo = items.length > 0 ? `\n\n用户冰箱里有：${items.map(i => i.name).join('、')}。如果食谱中有冰箱里已有的食材请标注出来。` : '';
+
+  const prompt = `你是一个中餐菜谱推荐专家。用户想吃：${query}${fridgeInfo}
+
+请推荐 3-5 道相关菜谱。每道菜谱包含：
+1. 菜名
+2. 需要的食材列表
+3. 简要做法（3-5步）
+4. 烹饪时间和难度
+5. 一句话推荐理由
+
+请按 JSON 格式返回：
+[{
+  "name": "菜名",
+  "ingredients": ["食材1", "食材2"],
+  "have_ingredients": ["冰箱里已有的食材"],
+  "steps": ["步骤1", "步骤2"],
+  "time": "15分钟",
+  "difficulty": "简单",
+  "tip": "推荐理由"
+}]
+
+只返回 JSON 数组。`;
+
+  const deployment = ac.deployment || 'gpt-4o';
+  const url = `${ac.endpoint}/openai/deployments/${deployment}/chat/completions?api-version=2024-12-01-preview`;
+
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'api-key': ac.key },
+      body: JSON.stringify({ messages: [{ role: 'user', content: prompt }], max_tokens: 3000, temperature: 0.7 })
+    });
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error.message);
+    const text = data.choices?.[0]?.message?.content || '';
+    const jsonMatch = text.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) throw new Error('未能解析菜谱');
+    const recipes = JSON.parse(jsonMatch[0]);
+
+    resultDiv.innerHTML = recipes.map(r => {
+      const xhsUrl = `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(r.name + ' 做法')}`;
+      return `<div class="recipe-card">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div class="recipe-title">${r.name}</div>
+          <a href="${xhsUrl}" target="_blank" style="font-size:12px;color:#FF2442;text-decoration:none;font-weight:600;white-space:nowrap">📕 小红书</a>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+          <span style="font-size:11px;padding:2px 8px;border-radius:8px;background:#EFF6FF;color:#1D4ED8">⏱ ${r.time}</span>
+          <span style="font-size:11px;padding:2px 8px;border-radius:8px;background:#F0FDF4;color:#166534">${r.difficulty}</span>
+        </div>
+        <div class="recipe-tags">
+          ${(r.have_ingredients || []).map(m => `<span class="recipe-tag">✅ ${m}</span>`).join('')}
+          ${r.ingredients.filter(i => !(r.have_ingredients || []).includes(i)).map(m => `<span class="recipe-tag need">🛒 ${m}</span>`).join('')}
+        </div>
+        <div style="margin-top:8px">
+          ${r.steps.map((s, i) => `<div style="font-size:12px;color:var(--text-secondary);line-height:1.6;margin-bottom:2px"><span style="color:var(--primary);font-weight:600">${i + 1}.</span> ${s}</div>`).join('')}
+        </div>
+        ${r.tip ? `<div style="font-size:12px;color:var(--info);margin-top:6px">💡 ${r.tip}</div>` : ''}
+      </div>`;
+    }).join('');
+  } catch (err) {
+    resultDiv.innerHTML = `<div style="text-align:center;padding:20px;color:var(--danger)">❌ ${err.message || '搜索失败'}</div>`;
+  }
+}
+
 async function searchRecipesAI() {
   const ac = getAzureConfig();
   if (!ac.endpoint || !ac.key) {
@@ -1727,9 +1813,13 @@ async function searchRecipesAI() {
     if (!jsonMatch) throw new Error('未能解析菜谱');
 
     const recipes = JSON.parse(jsonMatch[0]);
-    resultDiv.innerHTML = recipes.map(r => `
-      <div class="recipe-card">
-        <div class="recipe-title">${r.name}</div>
+    resultDiv.innerHTML = recipes.map(r => {
+      const xhsUrl = `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(r.name + ' 做法')}`;
+      return `<div class="recipe-card">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div class="recipe-title">${r.name}</div>
+          <a href="${xhsUrl}" target="_blank" style="font-size:12px;color:#FF2442;text-decoration:none;font-weight:600;white-space:nowrap">📕 小红书</a>
+        </div>
         <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
           <span style="font-size:11px;padding:2px 8px;border-radius:8px;background:#EFF6FF;color:#1D4ED8">⏱ ${r.time}</span>
           <span style="font-size:11px;padding:2px 8px;border-radius:8px;background:#F0FDF4;color:#166534">${r.difficulty}</span>
@@ -1742,8 +1832,8 @@ async function searchRecipesAI() {
           ${r.steps.map((s, i) => `<div style="font-size:12px;color:var(--text-secondary);line-height:1.6;margin-bottom:2px"><span style="color:var(--primary);font-weight:600">${i + 1}.</span> ${s}</div>`).join('')}
         </div>
         ${r.tip ? `<div style="font-size:12px;color:var(--info);margin-top:6px">💡 ${r.tip}</div>` : ''}
-      </div>
-    `).join('');
+      </div>`;
+    }).join('');
 
     showToast(`✅ 找到 ${recipes.length} 道菜谱`);
   } catch (err) {
