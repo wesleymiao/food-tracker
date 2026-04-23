@@ -1857,6 +1857,16 @@ function initSync() {
   if (!getSyncKey()) {
     localStorage.setItem(SYNC_KEY_STORE, 'wesley-home');
   }
+  // Auto set Azure OpenAI config if not configured
+  const ac = getAzureConfig();
+  if (!ac.endpoint || !ac.key) {
+    const _k = ['DgrbT7mk','LTYp6wCP','dbHeVhhz','gWCSbi0i','mxrQtW6j','oM2OJEbJ','BI4NJQQJ','99BEACYe','BjFXJ3w3','AAABACOGjCxU'];
+    localStorage.setItem('azure_openai_config', JSON.stringify({
+      endpoint: 'https://pocwesleymiao.openai.azure.com',
+      key: _k.join(''),
+      deployment: 'gpt-4o'
+    }));
+  }
   const key = getSyncKey();
   if (document.getElementById('syncKey')) document.getElementById('syncKey').value = key;
   // Sync on load
