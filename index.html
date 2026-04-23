@@ -1318,6 +1318,21 @@ function addAllScanned() {
   scannedItems = [];
 }
 
+// URL setup: ?setup=base64({endpoint,key,deployment})
+function checkUrlSetup() {
+  const params = new URLSearchParams(location.search);
+  const setup = params.get('setup');
+  if (!setup) return;
+  try {
+    const cfg = JSON.parse(decodeURIComponent(atob(setup)));
+    if (cfg.endpoint && cfg.key) {
+      localStorage.setItem('azure_openai_config', JSON.stringify(cfg));
+      history.replaceState(null, '', location.pathname);
+      showToast('✅ Azure AI 已自动配置');
+    }
+  } catch(e) { console.error('Setup parse error:', e); }
+}
+
 // URL import: ?import=base64encodedJSON
 function checkUrlImport() {
   const params = new URLSearchParams(location.search);
@@ -1372,6 +1387,7 @@ function cancelImport() {
 }
 
 // Init
+checkUrlSetup();
 checkUrlImport();
 refresh();
 </script>
