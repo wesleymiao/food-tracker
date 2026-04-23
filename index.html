@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>食材管家</title>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 :root {
@@ -92,6 +91,14 @@ body {
 .btn-consume { background: #DBEAFE; color: #2563EB; }
 .btn-delete { background: #FEE2E2; color: #DC2626; }
 .fab-scan { box-shadow: 0 2px 12px rgba(59,130,246,0.3); }
+/* Quick add food chip */
+.quick-food {
+  padding: 7px 12px; border-radius: 20px; font-size: 13px;
+  border: 1.5px solid var(--border); background: white; cursor: pointer;
+  white-space: nowrap; color: var(--text); transition: all 0.15s;
+}
+.quick-food:active { transform: scale(0.95); }
+.quick-food.selected { background: var(--primary); color: white; border-color: var(--primary); }
 .scan-item {
   background: #F9FAFB; border-radius: 10px; padding: 10px 12px; margin-bottom: 8px;
   display: flex; align-items: center; gap: 8px;
@@ -315,43 +322,30 @@ body {
 </div>
 
 <!-- FAB group -->
-<button class="fab fab-scan" onclick="openScanModal()" style="bottom:150px;background:var(--info);width:48px;height:48px;font-size:20px">📷</button>
+<button class="fab fab-scan" onclick="openQuickAdd()" style="bottom:150px;background:var(--info);width:48px;height:48px;font-size:20px">⚡</button>
 <button class="fab" onclick="openAddModal()">+</button>
 
-<!-- Scan Modal -->
+<!-- Quick Add Modal -->
 <div class="modal-overlay" id="scanModal">
   <div class="modal" style="max-height:90vh;overflow-y:auto">
-    <h2>📷 拍照识别食材</h2>
-    <div style="font-size:13px;color:var(--text-secondary);margin-bottom:16px">拍照或上传订单截图，自动识别食材</div>
-    <div id="scanUploadArea" style="border:2px dashed var(--border);border-radius:12px;padding:30px;text-align:center;cursor:pointer;margin-bottom:16px" onclick="document.getElementById('scanFile').click()">
-      <div style="font-size:36px;margin-bottom:8px">📸</div>
-      <div style="font-size:14px;color:var(--text-secondary)">点击拍照或选择图片</div>
-      <input type="file" id="scanFile" accept="image/*" style="display:none" onchange="handleScanFile(event)">
+    <h2>⚡ 快速添加食材</h2>
+    <div style="font-size:13px;color:var(--text-secondary);margin-bottom:12px">点选常见食材，快速批量添加</div>
+    <div style="display:flex;gap:6px;margin-bottom:14px">
+      <input type="text" id="quickSearch" placeholder="🔍 搜索食材..." oninput="filterQuickAdd()" style="flex:1;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px">
     </div>
-    <div id="scanPreview" style="display:none;margin-bottom:16px">
-      <img id="scanImg" style="width:100%;border-radius:10px;margin-bottom:8px">
-      <div id="scanProgress" style="display:none">
-        <div style="font-size:13px;color:var(--text-secondary);margin-bottom:6px" id="scanStatus">正在识别中...</div>
-        <div class="progress-bar" style="height:6px"><div class="progress-fill" id="scanProgressBar" style="width:0%;background:var(--primary)"></div></div>
-      </div>
+    <div id="quickCatTabs" style="display:flex;gap:6px;overflow-x:auto;margin-bottom:12px;padding-bottom:4px">
+      <div class="filter-tab active" onclick="setQuickCat('全部',this)">全部</div>
+      <div class="filter-tab" onclick="setQuickCat('蛋白质',this)">💪 蛋白质</div>
+      <div class="filter-tab" onclick="setQuickCat('蔬菜水果',this)">🥗 蔬果</div>
+      <div class="filter-tab" onclick="setQuickCat('奶制品',this)">🥛 奶制品</div>
+      <div class="filter-tab" onclick="setQuickCat('碳水主食',this)">🍚 主食</div>
+      <div class="filter-tab" onclick="setQuickCat('调味料',this)">🧂 调味</div>
     </div>
-    <div id="ocrRawText" style="display:none;margin-bottom:12px">
-      <details>
-        <summary style="font-size:12px;color:var(--text-secondary);cursor:pointer">查看 OCR 原文</summary>
-        <pre id="ocrText" style="font-size:11px;color:#6B7280;background:#F9FAFB;padding:8px;border-radius:8px;white-space:pre-wrap;word-break:break-all;max-height:120px;overflow-y:auto;margin-top:6px"></pre>
-      </details>
-    </div>
-    <div id="scanResults" style="display:none">
-      <div style="font-size:14px;font-weight:600;margin-bottom:10px">识别结果（可编辑名称、数量、保质期）</div>
-      <div id="scanItemsList"></div>
-      <div style="margin-top:10px">
-        <div style="font-size:13px;color:var(--text-secondary);margin-bottom:6px">手动添加漏识别的食材：</div>
-        <div style="display:flex;gap:6px">
-          <input type="text" id="manualFoodName" placeholder="输入食材名称" style="flex:1;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px">
-          <button onclick="addManualScanned()" style="padding:8px 14px;border:none;border-radius:8px;background:var(--primary);color:white;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">+ 添加</button>
-        </div>
-      </div>
-      <button onclick="addAllScanned()" class="btn-submit" style="width:100%;margin-top:14px">全部添加到冰箱</button>
+    <div id="quickFoodGrid" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px"></div>
+    <div id="quickSelected" style="display:none;border-top:1px solid var(--border);padding-top:12px;margin-top:4px">
+      <div style="font-size:14px;font-weight:600;margin-bottom:10px">已选食材（可编辑数量和保质期）</div>
+      <div id="quickSelectedList"></div>
+      <button onclick="addAllScanned()" class="btn-submit" style="width:100%;margin-top:12px">全部添加到冰箱</button>
     </div>
     <div class="form-actions">
       <button class="btn-cancel" onclick="closeScanModal()">关闭</button>
@@ -935,7 +929,91 @@ function clearAll() {
   refresh();
 }
 
-// ===== Scan / OCR =====
+// ===== Quick Add =====
+let scannedItems = [];
+let quickCatFilter = '全部';
+
+function openQuickAdd() {
+  document.getElementById('scanModal').classList.add('show');
+  scannedItems = [];
+  quickCatFilter = '全部';
+  document.getElementById('quickSearch').value = '';
+  document.querySelectorAll('#quickCatTabs .filter-tab').forEach((t,i) => t.classList.toggle('active', i===0));
+  renderQuickGrid();
+  renderQuickSelected();
+}
+function closeScanModal() { document.getElementById('scanModal').classList.remove('show'); }
+
+function setQuickCat(cat, el) {
+  quickCatFilter = cat;
+  document.querySelectorAll('#quickCatTabs .filter-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  renderQuickGrid();
+}
+
+function filterQuickAdd() { renderQuickGrid(); }
+
+function renderQuickGrid() {
+  const search = document.getElementById('quickSearch').value.trim().toLowerCase();
+  let foods = FOOD_DB.filter(f => {
+    if (quickCatFilter !== '全部' && f.nut !== quickCatFilter) return false;
+    if (search && !f.kw.some(k => k.includes(search)) && !f.cat.includes(search)) return false;
+    return true;
+  });
+  // Deduplicate by canonical name and show only unique items
+  const seen = new Set();
+  foods = foods.filter(f => { if (seen.has(f.kw[0])) return false; seen.add(f.kw[0]); return true; });
+  const selectedNames = new Set(scannedItems.map(s => s.name));
+  const grid = document.getElementById('quickFoodGrid');
+  grid.innerHTML = foods.map(f => {
+    const sel = selectedNames.has(f.kw[0]);
+    return `<div class="quick-food${sel?' selected':''}" onclick="toggleQuickFood('${f.kw[0]}')">${CAT_ICONS[f.cat]||'📦'} ${f.kw[0]}</div>`;
+  }).join('');
+  if (foods.length === 0) {
+    grid.innerHTML = `<div style="width:100%;text-align:center;padding:16px;color:var(--text-secondary);font-size:13px">没有匹配的食材${search ? '<br>可以点右下角 + 手动添加' : ''}</div>`;
+  }
+}
+
+function toggleQuickFood(name) {
+  const idx = scannedItems.findIndex(s => s.name === name);
+  if (idx >= 0) {
+    scannedItems.splice(idx, 1);
+  } else {
+    const food = FOOD_DB.find(f => f.kw[0] === name);
+    if (food) {
+      scannedItems.push({
+        name: food.kw[0], category: food.cat, nutrition: food.nut,
+        quantity: '适量', shelf_life_days: food.shelf, storage: food.storage
+      });
+    }
+  }
+  renderQuickGrid();
+  renderQuickSelected();
+}
+
+function renderQuickSelected() {
+  const container = document.getElementById('quickSelected');
+  const list = document.getElementById('quickSelectedList');
+  if (scannedItems.length === 0) {
+    container.style.display = 'none';
+    return;
+  }
+  container.style.display = 'block';
+  list.innerHTML = scannedItems.map((item, i) => `
+    <div class="scan-item" style="flex-wrap:wrap">
+      <span>${CAT_ICONS[item.category]||'📦'}</span>
+      <span style="font-size:13px;font-weight:600;min-width:50px">${item.name}</span>
+      <input type="text" value="${item.quantity}" onchange="scannedItems[${i}].quantity=this.value" style="width:55px" placeholder="数量">
+      <div style="display:flex;align-items:center;gap:2px">
+        <input type="number" value="${item.shelf_life_days}" onchange="scannedItems[${i}].shelf_life_days=parseInt(this.value)||7" style="width:42px;border:1px solid var(--border);border-radius:6px;padding:6px 4px;font-size:12px;text-align:center" min="1">
+        <span style="font-size:11px;color:var(--text-secondary)">天</span>
+      </div>
+      <button class="scan-remove" onclick="scannedItems.splice(${i},1);renderQuickGrid();renderQuickSelected()">×</button>
+    </div>
+  `).join('') + `<div style="text-align:center;margin-top:6px">
+    <span style="font-size:12px;color:var(--text-secondary)">共 ${scannedItems.length} 个 · 可编辑数量和保质期</span>
+  </div>`;
+}
 const FOOD_DB = [
   {kw:['鸡胸肉','鸡胸'],cat:'肉类',nut:'蛋白质',shelf:5,storage:'冷藏'},
   {kw:['鸡翅','鸡中翅','翅中','翅根'],cat:'肉类',nut:'蛋白质',shelf:3,storage:'冷藏'},
@@ -998,144 +1076,6 @@ const FOOD_DB = [
   {kw:['蒜','大蒜','蒜头'],cat:'调味料',nut:'调味料',shelf:14,storage:'常温'},
   {kw:['葱','小葱','大葱'],cat:'蔬菜',nut:'蔬菜水果',shelf:5,storage:'冷藏'},
 ];
-
-let scannedItems = [];
-
-function openScanModal() {
-  document.getElementById('scanModal').classList.add('show');
-  document.getElementById('scanPreview').style.display = 'none';
-  document.getElementById('scanResults').style.display = 'none';
-  document.getElementById('scanUploadArea').style.display = 'block';
-  document.getElementById('scanFile').value = '';
-  scannedItems = [];
-}
-function closeScanModal() { document.getElementById('scanModal').classList.remove('show'); }
-
-function handleScanFile(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = function(ev) {
-    document.getElementById('scanImg').src = ev.target.result;
-    document.getElementById('scanPreview').style.display = 'block';
-    document.getElementById('scanUploadArea').style.display = 'none';
-    document.getElementById('scanProgress').style.display = 'block';
-    document.getElementById('scanStatus').textContent = '正在加载 OCR 引擎...';
-    document.getElementById('scanProgressBar').style.width = '10%';
-    runOCR(ev.target.result);
-  };
-  reader.readAsDataURL(file);
-}
-
-async function runOCR(imgSrc) {
-  try {
-    const result = await Tesseract.recognize(imgSrc, 'chi_sim+eng', {
-      logger: m => {
-        if (m.status === 'recognizing text') {
-          const pct = Math.round(m.progress * 100);
-          document.getElementById('scanProgressBar').style.width = pct + '%';
-          document.getElementById('scanStatus').textContent = `识别中... ${pct}%`;
-        }
-      }
-    });
-
-    document.getElementById('scanProgress').style.display = 'none';
-    const text = result.data.text;
-    console.log('OCR text:', text);
-    extractFoodItems(text);
-  } catch (err) {
-    console.error('OCR error:', err);
-    document.getElementById('scanStatus').textContent = '识别失败，请重试';
-  }
-}
-
-function extractFoodItems(text) {
-  const lines = text.split(/[\n\r]+/).map(l => l.trim()).filter(Boolean);
-  const found = [];
-  const usedCanonical = new Set();
-
-  // Show OCR raw text
-  document.getElementById('ocrRawText').style.display = 'block';
-  document.getElementById('ocrText').textContent = text;
-
-  // Only do EXACT keyword matching, line by line
-  // This avoids false positives from addresses, store names, etc.
-  for (const line of lines) {
-    const nl = line.replace(/\s+/g, '');
-    for (const food of FOOD_DB) {
-      if (usedCanonical.has(food.kw[0])) continue;
-      for (const kw of food.kw) {
-        if (kw.length < 2) continue; // skip single-char keywords
-        if (nl.includes(kw)) {
-          let qty = '适量';
-          const qMatch = line.match(/(\d+[\.\d]*)\s*(g|kg|斤|两|个|盒|袋|瓶|包|份|根|条|颗|块|片|ml|mL|L|升|毫升|克|千克)/i);
-          if (qMatch) qty = qMatch[1] + qMatch[2];
-          const countMatch = line.match(/[x×]\s*(\d+)/i);
-          if (qty === '适量' && countMatch) qty = countMatch[1] + '份';
-          found.push({
-            name: food.kw[0],
-            category: food.cat,
-            nutrition: food.nut,
-            quantity: qty,
-            shelf_life_days: food.shelf,
-            storage: food.storage
-          });
-          usedCanonical.add(food.kw[0]);
-          break;
-        }
-      }
-    }
-  }
-
-  scannedItems = found;
-  renderScanResults();
-}
-
-function renderScanResults() {
-  const container = document.getElementById('scanResults');
-  const list = document.getElementById('scanItemsList');
-  if (scannedItems.length === 0) {
-    list.innerHTML = '<div style="text-align:center;padding:16px;color:var(--text-secondary);font-size:13px">未自动识别到食材<br>请在下方手动输入食材名称添加</div>';
-    container.style.display = 'block';
-    return;
-  }
-  container.style.display = 'block';
-  list.innerHTML = scannedItems.map((item, i) => `
-    <div class="scan-item" id="scanItem${i}" style="flex-wrap:wrap">
-      <span>${CAT_ICONS[item.category]||'📦'}</span>
-      <input type="text" value="${item.name}" onchange="scannedItems[${i}].name=this.value" style="flex:1;min-width:60px">
-      <input type="text" value="${item.quantity}" onchange="scannedItems[${i}].quantity=this.value" style="width:55px" placeholder="数量">
-      <div style="display:flex;align-items:center;gap:2px">
-        <input type="number" value="${item.shelf_life_days}" onchange="scannedItems[${i}].shelf_life_days=parseInt(this.value)||7" style="width:42px;border:1px solid var(--border);border-radius:6px;padding:6px 4px;font-size:12px;text-align:center" min="1">
-        <span style="font-size:11px;color:var(--text-secondary)">天</span>
-      </div>
-      <button class="scan-remove" onclick="scannedItems.splice(${i},1);renderScanResults()">×</button>
-    </div>
-  `).join('') + `<div style="text-align:center;margin-top:6px">
-    <span style="font-size:12px;color:var(--text-secondary)">共 ${scannedItems.length} 个食材 · 可编辑名称、数量和保质期</span>
-  </div>`;
-}
-
-function addManualScanned() {
-  const input = document.getElementById('manualFoodName');
-  const name = input.value.trim();
-  if (!name) return;
-  // Try to find in FOOD_DB
-  const match = FOOD_DB.find(f => f.kw.some(k => name.includes(k) || k.includes(name)));
-  if (match) {
-    scannedItems.push({
-      name: match.kw[0], category: match.cat, nutrition: match.nut,
-      quantity: '适量', shelf_life_days: match.shelf, storage: match.storage
-    });
-  } else {
-    scannedItems.push({
-      name, category: '其他', nutrition: '其他',
-      quantity: '适量', shelf_life_days: 7, storage: '冷藏'
-    });
-  }
-  input.value = '';
-  renderScanResults();
-}
 
 function addAllScanned() {
   if (scannedItems.length === 0) return;
