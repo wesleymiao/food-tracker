@@ -1790,7 +1790,7 @@ async function syncNow() {
   if (indicator) indicator.textContent = '⏳ 同步中...';
 
   try {
-    // 1. Download remote data
+    _syncing = true;
     let remote = null;
     const getResp = await fetch(url, { headers: { 'x-ms-blob-type': 'BlockBlob' } });
     if (getResp.ok) {
@@ -1846,6 +1846,8 @@ async function syncNow() {
     if (statusEl) statusEl.textContent = '❌ 同步失败：' + (err.message || '网络错误');
     if (indicator) indicator.textContent = '☁️ ❌';
     showToast('❌ 同步失败：' + (err.message || '网络错误'));
+  } finally {
+    _syncing = false;
   }
 }
 
@@ -1865,10 +1867,11 @@ function initSync() {
 }
 
 // Auto sync after any data change
+let _syncing = false;
 const _origSaveItems = saveItems;
 saveItems = function(items) {
   _origSaveItems(items);
-  // Debounced upload
+  if (_syncing) return; // Don't trigger sync while syncing
   clearTimeout(window._syncDebounce);
   if (getSyncKey()) {
     window._syncDebounce = setTimeout(syncNow, 3000);
