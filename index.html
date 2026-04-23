@@ -320,7 +320,7 @@ body {
 
 <!-- Scan Modal -->
 <div class="modal-overlay" id="scanModal">
-  <div class="modal">
+  <div class="modal" style="max-height:90vh;overflow-y:auto">
     <h2>📷 拍照识别食材</h2>
     <div style="font-size:13px;color:var(--text-secondary);margin-bottom:16px">拍照或上传订单截图，自动识别食材</div>
     <div id="scanUploadArea" style="border:2px dashed var(--border);border-radius:12px;padding:30px;text-align:center;cursor:pointer;margin-bottom:16px" onclick="document.getElementById('scanFile').click()">
@@ -335,10 +335,23 @@ body {
         <div class="progress-bar" style="height:6px"><div class="progress-fill" id="scanProgressBar" style="width:0%;background:var(--primary)"></div></div>
       </div>
     </div>
+    <div id="ocrRawText" style="display:none;margin-bottom:12px">
+      <details>
+        <summary style="font-size:12px;color:var(--text-secondary);cursor:pointer">查看 OCR 原文</summary>
+        <pre id="ocrText" style="font-size:11px;color:#6B7280;background:#F9FAFB;padding:8px;border-radius:8px;white-space:pre-wrap;word-break:break-all;max-height:120px;overflow-y:auto;margin-top:6px"></pre>
+      </details>
+    </div>
     <div id="scanResults" style="display:none">
-      <div style="font-size:14px;font-weight:600;margin-bottom:10px">识别结果（可编辑）</div>
+      <div style="font-size:14px;font-weight:600;margin-bottom:10px">识别结果（可编辑名称、数量、保质期）</div>
       <div id="scanItemsList"></div>
-      <button onclick="addAllScanned()" class="btn-submit" style="width:100%;margin-top:12px">全部添加到冰箱</button>
+      <div style="margin-top:10px">
+        <div style="font-size:13px;color:var(--text-secondary);margin-bottom:6px">手动添加漏识别的食材：</div>
+        <div style="display:flex;gap:6px">
+          <input type="text" id="manualFoodName" placeholder="输入食材名称" style="flex:1;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px">
+          <button onclick="addManualScanned()" style="padding:8px 14px;border:none;border-radius:8px;background:var(--primary);color:white;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">+ 添加</button>
+        </div>
+      </div>
+      <button onclick="addAllScanned()" class="btn-submit" style="width:100%;margin-top:14px">全部添加到冰箱</button>
     </div>
     <div class="form-actions">
       <button class="btn-cancel" onclick="closeScanModal()">关闭</button>
@@ -1041,31 +1054,50 @@ function extractFoodItems(text) {
   const found = [];
   const usedKw = new Set();
 
-  // Try to match each food in DB against the OCR text
-  const fullText = text.toLowerCase();
+  // Show OCR raw text for debugging
+  document.getElementById('ocrRawText').style.display = 'block';
+  document.getElementById('ocrText').textContent = text;
+
+  // Normalize: remove spaces, convert to lowercase for matching
+  const normalized = text.replace(/\s+/g, '').toLowerCase();
+  // Also try matching each line separately (for better accuracy)
+  const normalizedLines = lines.map(l => l.replace(/\s+/g, '').toLowerCase());
+
   for (const food of FOOD_DB) {
     for (const kw of food.kw) {
-      if (usedKw.has(kw)) continue;
-      if (fullText.includes(kw)) {
-        // Try to find quantity nearby
+      if (usedKw.has(food.kw[0])) break;
+      // Fuzzy: try exact, then allow 1 char difference for OCR errors
+      let matched = normalized.includes(kw);
+      if (!matched && kw.length >= 2) {
+        // Try matching with any single char substitution (OCR tolerance)
+        for (let i = 0; i < kw.length && !matched; i++) {
+          const partial = kw.substring(0, i) + '.' + kw.substring(i + 1);
+          try { matched = new RegExp(partial).test(normalized); } catch(e) {}
+        }
+      }
+      if (matched) {
         let qty = '适量';
         for (const line of lines) {
-          if (line.includes(kw)) {
-            const qMatch = line.match(/(\d+[\.\d]*)\s*(g|kg|斤|两|个|盒|袋|瓶|包|份|根|条|颗|块|片|ml|L|升)/i);
+          const nl = line.replace(/\s+/g, '').toLowerCase();
+          if (nl.includes(kw) || (kw.length >= 2 && (() => { try { return new RegExp(kw.substring(0,1) + '.' + kw.substring(2)).test(nl); } catch(e) { return false; } })())) {
+            const qMatch = line.match(/(\d+[\.\d]*)\s*(g|kg|斤|两|个|盒|袋|瓶|包|份|根|条|颗|块|片|ml|mL|L|升|毫升|克|千克)/i);
             if (qMatch) qty = qMatch[1] + qMatch[2];
+            // Also try price-adjacent quantity like "x2" or "×2"
+            const countMatch = line.match(/[x×]\s*(\d+)/i);
+            if (qty === '适量' && countMatch) qty = countMatch[1] + '份';
             break;
           }
         }
         found.push({
-          name: food.kw[0], // use canonical name
+          name: food.kw[0],
           category: food.cat,
           nutrition: food.nut,
           quantity: qty,
           shelf_life_days: food.shelf,
           storage: food.storage
         });
-        // Mark all synonyms as used
         food.kw.forEach(k => usedKw.add(k));
+        usedKw.add(food.kw[0]);
         break;
       }
     }
@@ -1079,21 +1111,46 @@ function renderScanResults() {
   const container = document.getElementById('scanResults');
   const list = document.getElementById('scanItemsList');
   if (scannedItems.length === 0) {
-    list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary)">未识别到食材，试试手动添加 👆</div>';
+    list.innerHTML = '<div style="text-align:center;padding:16px;color:var(--text-secondary);font-size:13px">未自动识别到食材<br>请在下方手动输入食材名称添加</div>';
     container.style.display = 'block';
     return;
   }
   container.style.display = 'block';
   list.innerHTML = scannedItems.map((item, i) => `
-    <div class="scan-item" id="scanItem${i}">
+    <div class="scan-item" id="scanItem${i}" style="flex-wrap:wrap">
       <span>${CAT_ICONS[item.category]||'📦'}</span>
-      <input type="text" value="${item.name}" onchange="scannedItems[${i}].name=this.value" style="flex:1">
-      <input type="text" value="${item.quantity}" onchange="scannedItems[${i}].quantity=this.value" style="width:60px">
+      <input type="text" value="${item.name}" onchange="scannedItems[${i}].name=this.value" style="flex:1;min-width:60px">
+      <input type="text" value="${item.quantity}" onchange="scannedItems[${i}].quantity=this.value" style="width:55px" placeholder="数量">
+      <div style="display:flex;align-items:center;gap:2px">
+        <input type="number" value="${item.shelf_life_days}" onchange="scannedItems[${i}].shelf_life_days=parseInt(this.value)||7" style="width:42px;border:1px solid var(--border);border-radius:6px;padding:6px 4px;font-size:12px;text-align:center" min="1">
+        <span style="font-size:11px;color:var(--text-secondary)">天</span>
+      </div>
       <button class="scan-remove" onclick="scannedItems.splice(${i},1);renderScanResults()">×</button>
     </div>
-  `).join('') + `<div style="text-align:center;margin-top:8px">
-    <span style="font-size:12px;color:var(--text-secondary)">共识别 ${scannedItems.length} 个食材，可编辑名称和数量</span>
+  `).join('') + `<div style="text-align:center;margin-top:6px">
+    <span style="font-size:12px;color:var(--text-secondary)">共 ${scannedItems.length} 个食材 · 可编辑名称、数量和保质期</span>
   </div>`;
+}
+
+function addManualScanned() {
+  const input = document.getElementById('manualFoodName');
+  const name = input.value.trim();
+  if (!name) return;
+  // Try to find in FOOD_DB
+  const match = FOOD_DB.find(f => f.kw.some(k => name.includes(k) || k.includes(name)));
+  if (match) {
+    scannedItems.push({
+      name: match.kw[0], category: match.cat, nutrition: match.nut,
+      quantity: '适量', shelf_life_days: match.shelf, storage: match.storage
+    });
+  } else {
+    scannedItems.push({
+      name, category: '其他', nutrition: '其他',
+      quantity: '适量', shelf_life_days: 7, storage: '冷藏'
+    });
+  }
+  input.value = '';
+  renderScanResults();
 }
 
 function addAllScanned() {
