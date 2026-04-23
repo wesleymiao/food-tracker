@@ -1853,17 +1853,16 @@ async function syncNow() {
 
 // Auto sync on load & periodically
 function initSync() {
+  // Always use default sync key if none set
+  if (!getSyncKey()) {
+    localStorage.setItem(SYNC_KEY_STORE, 'wesley-home');
+  }
   const key = getSyncKey();
   if (document.getElementById('syncKey')) document.getElementById('syncKey').value = key;
-  if (key) {
-    // Sync on load (after small delay)
-    setTimeout(syncNow, 1500);
-    // Auto sync every 5 minutes
-    setInterval(syncNow, 5 * 60 * 1000);
-  } else {
-    const indicator = document.getElementById('syncIndicator');
-    if (indicator) indicator.textContent = '';
-  }
+  // Sync on load
+  setTimeout(syncNow, 1500);
+  // Auto sync every 5 minutes
+  setInterval(syncNow, 5 * 60 * 1000);
 }
 
 // Auto sync after any data change
