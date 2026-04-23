@@ -231,7 +231,10 @@ body {
 <body>
 
 <div class="header">
-  <h1>🥬 食材管家</h1>
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <h1>🥬 食材管家</h1>
+    <span id="syncIndicator" style="font-size:12px;opacity:0.8;cursor:pointer" onclick="syncNow()"></span>
+  </div>
   <div class="sub" id="headerSub">管理你的食材，减少浪费</div>
 </div>
 <div class="toast" id="toast"></div>
@@ -311,6 +314,20 @@ body {
     <div style="margin-top:12px">
       <div style="font-size:13px;font-weight:600;margin-bottom:8px">营养分类统计</div>
       <div id="nutritionStats"></div>
+    </div>
+  </div>
+  <div class="section">
+    <div class="section-title">☁️ 云端同步</div>
+    <div class="settings-item" style="flex-direction:column;align-items:stretch;gap:8px">
+      <div style="font-size:13px;color:var(--text-secondary);line-height:1.5;margin-bottom:4px">
+        设置同步密钥后，不同浏览器/设备可共享数据。使用相同密钥的设备会自动同步。
+      </div>
+      <input type="text" id="syncKey" placeholder="输入同步密钥（如：wesley-home）" style="border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px">
+      <div style="display:flex;gap:8px">
+        <button onclick="saveSyncConfig()" style="flex:1;padding:10px;border:none;border-radius:8px;background:var(--primary);color:white;font-size:13px;font-weight:600;cursor:pointer">保存密钥</button>
+        <button onclick="syncNow()" id="syncBtn" style="flex:1;padding:10px;border:none;border-radius:8px;background:var(--info);color:white;font-size:13px;font-weight:600;cursor:pointer">🔄 立即同步</button>
+      </div>
+      <div id="syncStatus" style="font-size:12px;color:var(--text-secondary);text-align:center"></div>
     </div>
   </div>
   <div class="section">
@@ -1458,6 +1475,136 @@ function cancelImport() {
   history.replaceState(null, '', location.pathname);
 }
 
+// ===== Cloud Sync =====
+const SYNC_STORAGE_URL = 'https://workouttrackerwesleymiao.blob.core.windows.net/food-tracker';
+const SYNC_SAS = 'se=2028-04-23T00%3A00%3A00Z&sp=rwdl&spr=https&sv=2026-02-06&sr=c&sig=DD%2BbA%2BPx%2B7laHdkBC9vVL0d5VVy%2B2kUgle0PEqr9udg%3D';
+const SYNC_KEY_STORE = 'food_sync_key';
+const SYNC_TS_STORE = 'food_sync_ts';
+
+function getSyncKey() { return localStorage.getItem(SYNC_KEY_STORE) || ''; }
+function saveSyncConfig() {
+  const key = document.getElementById('syncKey').value.trim();
+  if (!key) { showToast('请输入同步密钥'); return; }
+  localStorage.setItem(SYNC_KEY_STORE, key);
+  showToast('✅ 同步密钥已保存');
+  syncNow();
+}
+
+function getBlobName() {
+  const key = getSyncKey();
+  if (!key) return null;
+  // Simple hash to create a safe blob name
+  let h = 0;
+  for (let i = 0; i < key.length; i++) h = ((h << 5) - h + key.charCodeAt(i)) | 0;
+  return `sync_${key.replace(/[^a-zA-Z0-9_-]/g, '_')}_${Math.abs(h).toString(36)}.json`;
+}
+
+async function syncNow() {
+  const key = getSyncKey();
+  if (!key) { showToast('请先设置同步密钥'); return; }
+  const blob = getBlobName();
+  const url = `${SYNC_STORAGE_URL}/${blob}?${SYNC_SAS}`;
+  const statusEl = document.getElementById('syncStatus');
+  const indicator = document.getElementById('syncIndicator');
+  if (statusEl) statusEl.textContent = '⏳ 同步中...';
+  if (indicator) indicator.textContent = '⏳ 同步中...';
+
+  try {
+    // 1. Download remote data
+    let remote = null;
+    const getResp = await fetch(url, { headers: { 'x-ms-blob-type': 'BlockBlob' } });
+    if (getResp.ok) {
+      remote = await getResp.json();
+    }
+
+    // 2. Merge
+    const local = getItems();
+    const localTs = parseInt(localStorage.getItem(SYNC_TS_STORE) || '0');
+    let merged;
+
+    if (!remote) {
+      // No remote data, upload local
+      merged = local;
+    } else {
+      // Merge by id: newer wins (based on item's own timestamps)
+      const map = new Map();
+      (remote.items || []).forEach(i => map.set(i.id, i));
+      local.forEach(i => {
+        const existing = map.get(i.id);
+        if (!existing) {
+          map.set(i.id, i);
+        } else {
+          // Keep whichever was modified more recently
+          const localMod = i.consumed_date || i.wasted_date || i.purchase_date || '';
+          const remoteMod = existing.consumed_date || existing.wasted_date || existing.purchase_date || '';
+          if (localMod >= remoteMod) map.set(i.id, i);
+        }
+      });
+      merged = [...map.values()].sort((a, b) => b.id - a.id);
+    }
+
+    // 3. Save locally
+    saveItems(merged);
+
+    // 4. Upload merged data
+    const now = Date.now();
+    const payload = JSON.stringify({ items: merged, settings: getSettings(), updated_at: now, sync_key: key });
+    await fetch(url, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'x-ms-blob-type': 'BlockBlob' },
+      body: payload
+    });
+    localStorage.setItem(SYNC_TS_STORE, now.toString());
+
+    refresh();
+    const timeStr = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    if (statusEl) statusEl.textContent = `✅ 上次同步：${timeStr}，共 ${merged.length} 条`;
+    if (indicator) indicator.textContent = `☁️ ${timeStr}`;
+    showToast(`✅ 同步完成，共 ${merged.length} 条数据`);
+  } catch(err) {
+    console.error('Sync error:', err);
+    if (statusEl) statusEl.textContent = '❌ 同步失败：' + (err.message || '网络错误');
+    if (indicator) indicator.textContent = '☁️ ❌';
+    showToast('❌ 同步失败：' + (err.message || '网络错误'));
+  }
+}
+
+// Auto sync on load & periodically
+function initSync() {
+  const key = getSyncKey();
+  if (document.getElementById('syncKey')) document.getElementById('syncKey').value = key;
+  if (key) {
+    // Sync on load (after small delay)
+    setTimeout(syncNow, 1500);
+    // Auto sync every 5 minutes
+    setInterval(syncNow, 5 * 60 * 1000);
+  } else {
+    const indicator = document.getElementById('syncIndicator');
+    if (indicator) indicator.textContent = '';
+  }
+}
+
+// Auto sync after any data change
+const _origSaveItems = saveItems;
+saveItems = function(items) {
+  _origSaveItems(items);
+  // Debounced upload
+  clearTimeout(window._syncDebounce);
+  if (getSyncKey()) {
+    window._syncDebounce = setTimeout(syncNow, 3000);
+  }
+};
+
+// URL setup for sync key: ?sync=key
+function checkUrlSync() {
+  const params = new URLSearchParams(location.search);
+  const syncKey = params.get('sync');
+  if (!syncKey) return;
+  localStorage.setItem(SYNC_KEY_STORE, syncKey);
+  history.replaceState(null, '', location.pathname);
+  showToast('✅ 同步密钥已配置');
+}
+
 // Edit food
 function openEditModal(id) {
   const item = getItems().find(i => i.id === id);
@@ -1515,8 +1662,10 @@ function saveEdit() {
 
 // Init
 checkUrlSetup();
+checkUrlSync();
 checkUrlImport();
 refresh();
+initSync();
 </script>
 </body>
 </html>
