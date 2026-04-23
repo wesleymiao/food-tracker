@@ -326,7 +326,7 @@ body {
     <div id="scanUploadArea" style="border:2px dashed var(--border);border-radius:12px;padding:30px;text-align:center;cursor:pointer;margin-bottom:16px" onclick="document.getElementById('scanFile').click()">
       <div style="font-size:36px;margin-bottom:8px">📸</div>
       <div style="font-size:14px;color:var(--text-secondary)">点击拍照或选择图片</div>
-      <input type="file" id="scanFile" accept="image/*" capture="environment" style="display:none" onchange="handleScanFile(event)">
+      <input type="file" id="scanFile" accept="image/*" style="display:none" onchange="handleScanFile(event)">
     </div>
     <div id="scanPreview" style="display:none;margin-bottom:16px">
       <img id="scanImg" style="width:100%;border-radius:10px;margin-bottom:8px">
