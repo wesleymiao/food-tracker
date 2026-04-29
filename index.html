@@ -6,6 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css">
 <title>食材管家</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -1193,14 +1194,8 @@ function handleScanFile(e) {
   }
   const reader = new FileReader();
   reader.onload = function(ev) {
-    document.getElementById('scanImg').src = ev.target.result;
-    document.getElementById('scanPreview').style.display = 'block';
-    document.getElementById('scanUploadArea').style.display = 'none';
-    document.getElementById('scanProgress').style.display = 'block';
-    document.getElementById('scanStatus').textContent = '正在 AI 识别中...';
-    document.getElementById('scanProgressBar').style.width = '30%';
     const dataUrl = ev.target.result;
-    callAzureOpenAI(dataUrl);
+    openCropModal(dataUrl);
   };
   reader.readAsDataURL(file);
 }
@@ -1993,6 +1988,100 @@ if (syncFromUrl) {
   setTimeout(syncNow, 500);
 } else {
   initSync();
+}
+</script>
+<script src="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.js"></script>
+
+<!-- Crop Modal -->
+<div id="cropModal" style="display:none;position:fixed;inset:0;z-index:10001;background:rgba(0,0,0,0.95);flex-direction:column">
+  <div style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;background:#111">
+    <button onclick="cancelCrop()" style="padding:8px 16px;border:none;border-radius:8px;background:#555;color:white;font-size:14px;cursor:pointer">取消</button>
+    <span style="color:white;font-size:15px;font-weight:600">裁剪图片</span>
+    <button onclick="confirmCrop()" style="padding:8px 16px;border:none;border-radius:8px;background:var(--primary);color:white;font-size:14px;font-weight:600;cursor:pointer">确认 ✂️</button>
+  </div>
+  <div style="flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:8px">
+    <img id="cropImage" style="max-width:100%;max-height:100%;display:block">
+  </div>
+  <div style="padding:10px 16px;display:flex;gap:10px;justify-content:center;background:#111">
+    <button onclick="setCropAspect(NaN)" class="crop-ratio-btn active" data-ratio="free" style="padding:6px 14px;border:1px solid #666;border-radius:20px;background:#333;color:white;font-size:12px;cursor:pointer">自由</button>
+    <button onclick="setCropAspect(1)" class="crop-ratio-btn" data-ratio="1" style="padding:6px 14px;border:1px solid #666;border-radius:20px;background:#333;color:white;font-size:12px;cursor:pointer">1:1</button>
+    <button onclick="setCropAspect(4/3)" class="crop-ratio-btn" data-ratio="4/3" style="padding:6px 14px;border:1px solid #666;border-radius:20px;background:#333;color:white;font-size:12px;cursor:pointer">4:3</button>
+    <button onclick="setCropAspect(16/9)" class="crop-ratio-btn" data-ratio="16/9" style="padding:6px 14px;border:1px solid #666;border-radius:20px;background:#333;color:white;font-size:12px;cursor:pointer">16:9</button>
+    <button onclick="skipCrop()" style="padding:6px 14px;border:1px solid var(--primary);border-radius:20px;background:transparent;color:var(--primary);font-size:12px;cursor:pointer">跳过裁剪</button>
+  </div>
+</div>
+
+<script>
+let _cropper = null;
+let _cropOriginalDataUrl = null;
+
+function openCropModal(dataUrl) {
+  _cropOriginalDataUrl = dataUrl;
+  const img = document.getElementById('cropImage');
+  img.src = dataUrl;
+  document.getElementById('cropModal').style.display = 'flex';
+  // Destroy previous cropper
+  if (_cropper) { _cropper.destroy(); _cropper = null; }
+  // Wait for image to load
+  img.onload = function() {
+    _cropper = new Cropper(img, {
+      viewMode: 1,
+      dragMode: 'move',
+      autoCropArea: 1,
+      responsive: true,
+      background: false,
+      guides: true,
+      center: true,
+      highlight: true,
+      cropBoxMovable: true,
+      cropBoxResizable: true,
+      toggleDragModeOnDblclick: false,
+    });
+  };
+}
+
+function setCropAspect(ratio) {
+  if (_cropper) _cropper.setAspectRatio(ratio);
+  document.querySelectorAll('.crop-ratio-btn').forEach(b => {
+    b.style.background = '#333';
+    b.style.borderColor = '#666';
+  });
+  event.target.style.background = '#555';
+  event.target.style.borderColor = 'var(--primary)';
+}
+
+function confirmCrop() {
+  if (!_cropper) return;
+  const canvas = _cropper.getCroppedCanvas({ maxWidth: 2048, maxHeight: 2048 });
+  const croppedDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+  closeCropModal();
+  proceedWithImage(croppedDataUrl);
+}
+
+function skipCrop() {
+  closeCropModal();
+  proceedWithImage(_cropOriginalDataUrl);
+}
+
+function cancelCrop() {
+  closeCropModal();
+  // Reset file input
+  document.getElementById('scanFile').value = '';
+}
+
+function closeCropModal() {
+  if (_cropper) { _cropper.destroy(); _cropper = null; }
+  document.getElementById('cropModal').style.display = 'none';
+}
+
+function proceedWithImage(dataUrl) {
+  document.getElementById('scanImg').src = dataUrl;
+  document.getElementById('scanPreview').style.display = 'block';
+  document.getElementById('scanUploadArea').style.display = 'none';
+  document.getElementById('scanProgress').style.display = 'block';
+  document.getElementById('scanStatus').textContent = '正在 AI 识别中...';
+  document.getElementById('scanProgressBar').style.width = '30%';
+  callAzureOpenAI(dataUrl);
 }
 </script>
 </body>
