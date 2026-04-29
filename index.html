@@ -807,6 +807,7 @@ function saveFood() {
   saveItems(items);
   closeAddModal();
   refresh();
+  syncNow();
   showToast('✅ 已添加 ' + name);
 }
 
@@ -871,6 +872,7 @@ function confirmConsume() {
   saveItems(items);
   closeConsumeModal();
   refresh();
+  syncNow();
 }
 
 function deleteFood(id) {
@@ -883,6 +885,7 @@ function deleteFood(id) {
     saveItems(items);
   }
   refresh();
+  syncNow();
 }
 
 // Filter
