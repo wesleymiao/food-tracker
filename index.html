@@ -1832,10 +1832,19 @@ async function syncNow() {
         if (!existing) {
           map.set(i.id, i);
         } else {
-          // Keep whichever was modified more recently
-          const localMod = i.updatedAt || i.consumed_date || i.wasted_date || i.purchase_date || '';
-          const remoteMod = existing.updatedAt || existing.consumed_date || existing.wasted_date || existing.purchase_date || '';
-          if (localMod >= remoteMod) map.set(i.id, i);
+          // Item with updatedAt always wins over one without (it's been explicitly modified)
+          const localHasUpdate = !!i.updatedAt;
+          const remoteHasUpdate = !!existing.updatedAt;
+          if (localHasUpdate && !remoteHasUpdate) {
+            map.set(i.id, i);
+          } else if (!localHasUpdate && remoteHasUpdate) {
+            // keep remote (already in map)
+          } else if (localHasUpdate && remoteHasUpdate) {
+            if (i.updatedAt >= existing.updatedAt) map.set(i.id, i);
+          } else {
+            // Neither has updatedAt, keep local if it exists
+            map.set(i.id, i);
+          }
         }
       });
       merged = [...map.values()].sort((a, b) => b.id - a.id);
