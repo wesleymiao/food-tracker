@@ -798,7 +798,8 @@ function saveFood() {
     purchase_date: purchaseDate, expiry_date: expiry,
     shelf_life_days: shelfLife, storage,
     custom_remind_day: remindDay,
-    status: 'active', note
+    status: 'active', note,
+    updatedAt: new Date().toISOString()
   });
   saveItems(items);
   closeAddModal();
@@ -850,14 +851,17 @@ function confirmConsume() {
   if (type === 'consumed') {
     items[idx].status = 'consumed';
     items[idx].consumed_date = today();
+    items[idx].updatedAt = new Date().toISOString();
     showToast('✅ 已标记为吃完');
   } else if (type === 'partial') {
     const remaining = document.getElementById('partialQty')?.value || '';
     items[idx].quantity = remaining || items[idx].quantity;
+    items[idx].updatedAt = new Date().toISOString();
     showToast('🔄 已更新数量');
   } else if (type === 'wasted') {
     items[idx].status = 'wasted';
     items[idx].wasted_date = today();
+    items[idx].updatedAt = new Date().toISOString();
     showToast('🗑 已标记为丢弃');
   }
 
@@ -868,7 +872,13 @@ function confirmConsume() {
 
 function deleteFood(id) {
   if (!confirm('确定删除？')) return;
-  saveItems(getItems().filter(i => i.id !== id));
+  const items = getItems();
+  const item = items.find(i => i.id === id);
+  if (item) {
+    item.status = 'deleted';
+    item.updatedAt = new Date().toISOString();
+    saveItems(items);
+  }
   refresh();
 }
 
@@ -1811,7 +1821,7 @@ async function syncNow() {
       // No remote data, upload local
       merged = local;
     } else {
-      // Merge by id: newer wins (based on item's own timestamps)
+      // Merge by id: newer wins (based on updatedAt timestamp)
       const map = new Map();
       (remote.items || []).forEach(i => map.set(i.id, i));
       local.forEach(i => {
@@ -1820,8 +1830,8 @@ async function syncNow() {
           map.set(i.id, i);
         } else {
           // Keep whichever was modified more recently
-          const localMod = i.consumed_date || i.wasted_date || i.purchase_date || '';
-          const remoteMod = existing.consumed_date || existing.wasted_date || existing.purchase_date || '';
+          const localMod = i.updatedAt || i.consumed_date || i.wasted_date || i.purchase_date || '';
+          const remoteMod = existing.updatedAt || existing.consumed_date || existing.wasted_date || existing.purchase_date || '';
           if (localMod >= remoteMod) map.set(i.id, i);
         }
       });
