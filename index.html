@@ -1794,9 +1794,12 @@ function getBlobName() {
   return `sync_${key.replace(/[^a-zA-Z0-9_-]/g, '_')}_${Math.abs(h).toString(36)}.json`;
 }
 
+let _syncInProgress = false;
 async function syncNow() {
   const key = getSyncKey();
   if (!key) { showToast('请先设置同步密钥'); return; }
+  if (_syncInProgress) return; // Prevent concurrent syncs
+  _syncInProgress = true;
   const blob = getBlobName();
   const url = `${SYNC_STORAGE_URL}/${blob}?${SYNC_SAS}`;
   const statusEl = document.getElementById('syncStatus');
@@ -1844,25 +1847,26 @@ async function syncNow() {
     // 4. Upload merged data
     const now = Date.now();
     const payload = JSON.stringify({ items: merged, settings: getSettings(), updated_at: now, sync_key: key });
-    await fetch(url, {
+    const putResp = await fetch(url, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'x-ms-blob-type': 'BlockBlob' },
       body: payload
     });
+    if (!putResp.ok) throw new Error('上传失败 ' + putResp.status);
     localStorage.setItem(SYNC_TS_STORE, now.toString());
 
     refresh();
     const timeStr = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-    if (statusEl) statusEl.textContent = `✅ 上次同步：${timeStr}，共 ${merged.length} 条`;
+    const activeCount = merged.filter(i => i.status !== 'deleted').length;
+    if (statusEl) statusEl.textContent = `✅ 上次同步：${timeStr}，共 ${activeCount} 条`;
     if (indicator) indicator.textContent = `☁️ ${timeStr}`;
-    showToast(`✅ 同步完成，共 ${merged.length} 条数据`);
   } catch(err) {
     console.error('Sync error:', err);
     if (statusEl) statusEl.textContent = '❌ 同步失败：' + (err.message || '网络错误');
     if (indicator) indicator.textContent = '☁️ ❌';
-    showToast('❌ 同步失败：' + (err.message || '网络错误'));
   } finally {
     _syncing = false;
+    _syncInProgress = false;
   }
 }
 
